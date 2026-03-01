@@ -1,0 +1,64 @@
+import os
+import logging
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+def get_data_generators(config):
+    train_dir = os.path.join(config.RAW_DATA_DIR, "train")
+    val_dir = os.path.join(config.RAW_DATA_DIR, "val")
+    test_dir = os.path.join(config.RAW_DATA_DIR, "test")
+
+    for directory in [train_dir, val_dir, test_dir]:
+        if not os.path.exists(directory):
+            logger.error(f"Directory not found: {directory}")
+            raise FileNotFoundError(
+                f"Missing directory: {directory}. Please ensure data/raw/ contains train, val, and test folders."
+            )
+
+    train_datagen = ImageDataGenerator(
+        rescale=1./255,
+        rotation_range=config.AUGMENTATION_PARAMS.get("rotation_range", 20),
+        width_shift_range=config.AUGMENTATION_PARAMS.get("width_shift_range", 0.2),
+        height_shift_range=config.AUGMENTATION_PARAMS.get("height_shift_range", 0.2),
+        shear_range=config.AUGMENTATION_PARAMS.get("shear_range", 0.2),
+        zoom_range=config.AUGMENTATION_PARAMS.get("zoom_range", 0.2),
+        horizontal_flip=config.AUGMENTATION_PARAMS.get("horizontal_flip", True),
+        fill_mode=config.AUGMENTATION_PARAMS.get("fill_mode", "nearest")
+    )
+
+    valid_test_datagen = ImageDataGenerator(rescale=1./255)
+
+    logger.info("Loading Training Generator...")
+    train_generator = train_datagen.flow_from_directory(
+        train_dir,
+        target_size=config.INPUT_SHAPE[:2],
+        batch_size=config.BATCH_SIZE,
+        class_mode="categorical",
+        classes=config.CLASSES,
+        shuffle=True,
+        seed=config.RANDOM_SEED
+    )
+
+    logger.info("Loading Validation Generator...")
+    val_generator = valid_test_datagen.flow_from_directory(
+        val_dir,
+        target_size=config.INPUT_SHAPE[:2],
+        batch_size=config.BATCH_SIZE,
+        class_mode="categorical",
+        classes=config.CLASSES,
+        shuffle=False
+    )
+
+    logger.info("Loading Test Generator...")
+    test_generator = valid_test_datagen.flow_from_directory(
+        test_dir,
+        target_size=config.INPUT_SHAPE[:2],
+        batch_size=config.BATCH_SIZE,
+        class_mode="categorical",
+        classes=config.CLASSES,
+        shuffle=False
+    )
+
+    return train_generator, val_generator, test_generator
