@@ -2,96 +2,86 @@ import os
 import tensorflow as tf
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
 import logging
-from src import config, data_loader, model, utils
+from src.config import create_dirs, MODELS_DIR, EPOCHS
+from src.data_loader import get_data_generators
+from src.model import build_model
+from src import config
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def train():
+def main():
     """
     Main training script for the Road Pothole & Damage Detection System.
     """
-    
-    # 1. Load Data Generators
+    # 1. Ensure models/ directory exists
+    create_dirs()
+    if not os.path.exists(MODELS_DIR):
+        os.makedirs(MODELS_DIR)
+
+    # 2. Load Data Generators
     logger.info("Loading data generators...")
     try:
-        train_gen, val_gen, test_gen = data_loader.get_data_generators(config)
-        logger.info(f"Loaded generators for classes: {config.CLASSES}")
+        train_generator, val_generator, test_generator = get_data_generators(config)
     except Exception as e:
         logger.error(f"Failed to load data generators: {e}")
         return
 
-    # 2. Build the Model
-    logger.info("Building model architecture...")
-    cnn_model = model.build_model(config)
+    # 3. Build the Model
+    logger.info("Building model using build_model(config)...")
+    model = build_model(config)
 
-    # 3. Define Callbacks
-    # - EarlyStopping: Stop training if validation loss doesn't improve for 5 epochs
-    # - ModelCheckpoint: Save the best model version based on validation accuracy
-    # - ReduceLROnPlateau: Reduce learning rate when validation loss plateaus
-    
-    checkpoint_path = os.path.join(config.MODELS_DIR, f"{config.MODEL_NAME}_best.keras")
-    
-    callbacks = [
-        EarlyStopping(
-            monitor='val_loss',
-            patience=5,
-            restore_best_weights=True,
-            verbose=1
-        ),
-        ModelCheckpoint(
-            filepath=checkpoint_path,
-            monitor='val_accuracy',
-            save_best_only=True,
-            verbose=1
-        ),
-        ReduceLROnPlateau(
-            monitor='val_loss',
-            factor=0.2,
-            patience=3,
-            min_lr=1e-6,
-            verbose=1
-        )
-    ]
+    # 4. Define Callbacks
+    # EarlyStopping: monitor="val_loss", patience=5, restore_best_weights=True
+    early_stopping = EarlyStopping(
+        monitor="val_loss",
+        patience=5,
+        restore_best_weights=True,
+        verbose=1
+    )
 
-    # 4. Train the Model
-    logger.info(f"Starting training for {config.EPOCHS} epochs...")
-    try:
-        history = cnn_model.fit(
-            train_gen,
-            epochs=config.EPOCHS,
-            validation_data=val_gen,
-            callbacks=callbacks,
-            verbose=1
-        )
-        logger.info("Training completed successfully.")
-    except Exception as e:
-        logger.error(f"Training failed: {e}")
-        return
+    # ModelCheckpoint: filepath="models/best_model.h5", monitor="val_loss", save_best_only=True
+    best_model_path = os.path.join(MODELS_DIR, "best_model.h5")
+    model_checkpoint = ModelCheckpoint(
+        filepath=best_model_path,
+        monitor="val_loss",
+        save_best_only=True,
+        verbose=1
+    )
 
-    # 5. Evaluate on Test Set
-    logger.info("Evaluating model on test set...")
-    test_loss, test_acc = cnn_model.evaluate(test_gen, verbose=1)
-    logger.info(f"Test Accuracy: {test_acc:.4f}, Test Loss: {test_loss:.4f}")
+    # ReduceLROnPlateau: monitor="val_loss", factor=0.2, patience=3
+    reduce_lr = ReduceLROnPlateau(
+        monitor="val_loss",
+        factor=0.2,
+        patience=3,
+        verbose=1
+    )
 
-    # 6. Post-Training: Save Plots and Summaries
-    logger.info("Saving training results...")
+    # 5. Train the Model
+    logger.info(f"Starting training for {EPOCHS} epochs...")
+    history = model.fit(
+        train_generator,
+        validation_data=val_generator,
+        epochs=EPOCHS,
+        callbacks=[early_stopping, model_checkpoint, reduce_lr],
+        verbose=1
+    )
+
+    # 6. Save final trained model to models/final_model.h5
+    final_model_path = os.path.join(MODELS_DIR, "final_model.h5")
+    model.save(final_model_path)
+
+    # 7. Print results
+    logger.info("-------------------------------------------------")
+    logger.info("Training completed successfully!")
     
-    # Plot training history (Accuracy/Loss)
-    utils.plot_training_history(history, config.MODELS_DIR)
-    
-    # Save model summary to file
-    utils.save_model_summary(cnn_model, config.MODELS_DIR)
-    
-    # Save the final model (in case the checkpoint didn't save it)
-    final_model_path = os.path.join(config.MODELS_DIR, f"{config.MODEL_NAME}_final.keras")
-    cnn_model.save(final_model_path)
+    # Extract best validation accuracy from history
+    best_val_acc = max(history.history['val_accuracy'])
+    logger.info(f"Best Validation Accuracy: {best_val_acc:.4f}")
+    logger.info(f"Best model saved to: {best_model_path}")
     logger.info(f"Final model saved to: {final_model_path}")
+    logger.info("-------------------------------------------------")
 
 if __name__ == "__main__":
-    # Ensure project directories exist before training
-    config.create_dirs()
-    
-    # Start the training process
-    train()
+    main()
