@@ -78,13 +78,29 @@ Road-Pothole-Damage-Detection-System/
 
 ---
 
+## 🧪 Usage
+
+### Training the Model
+To start training the CNN model with the configured hyperparameters:
+```bash
+python -m src.train
+```
+This will:
+- Load data from `data/raw/`
+- Build the MobileNetV2-based model
+- Train with EarlyStopping, ModelCheckpoint, and ReduceLROnPlateau
+- Save the best model to `models/best_model.h5`
+- Save the final model to `models/final_model.h5`
+
+---
+
 ## 🏗️ Phase-wise Progress
 
 - [x] **PHASE 1**: Project Setup & Configuration
-- [x] **PHASE 2**: Data Pipeline & Preprocessing (Current)
-- [ ] **PHASE 3**: CNN Model Implementation
-- [ ] **PHASE 4**: Model Training & Evaluation
-- [ ] **PHASE 5**: Streamlit App Development
+- [x] **PHASE 2**: Data Pipeline & Preprocessing
+- [x] **PHASE 3**: CNN Model Implementation
+- [x] **PHASE 4**: Model Training & Evaluation
+- [ ] **PHASE 5**: Streamlit App Development (Current)
 
 ---
 
