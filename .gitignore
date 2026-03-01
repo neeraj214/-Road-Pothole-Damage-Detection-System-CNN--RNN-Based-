@@ -23,9 +23,9 @@ wheels/
 
 # Data and Models
 data/raw/*
-!data/raw/.gitkeep
 data/processed/*
-!data/processed/.gitkeep
+# Allow all .gitkeep files
+!**/.gitkeep
 models/*.h5
 models/*.keras
 models/*.tflite
