@@ -9,6 +9,7 @@ function ResultCard({ result }) {
     switch (prediction.toLowerCase()) {
       case 'normal':
       case 'good road':
+      case 'healthy road':
         return {
           color: 'text-success',
           bg: 'bg-green-50',
@@ -16,6 +17,7 @@ function ResultCard({ result }) {
           label: 'Healthy Road'
         };
       case 'crack':
+      case 'surface crack':
         return {
           color: 'text-warning',
           bg: 'bg-yellow-50',
