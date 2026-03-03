@@ -20,7 +20,7 @@ VALIDATION_SPLIT = 0.2
 RANDOM_SEED = 42
 
 # Classes
-CLASSES = ["pothole", "normal"]
+CLASSES = ["pothole", "crack", "normal"]
 NUM_CLASSES = len(CLASSES)
 
 # Augmentation Config
