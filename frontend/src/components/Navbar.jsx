@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { HiRoad } from 'react-icons/hi2';
+import { HiGlobeAmericas } from 'react-icons/hi2';
 import { motion } from 'framer-motion';
 
 function Navbar() {
@@ -9,7 +9,7 @@ function Navbar() {
         <div className="flex items-center justify-between h-16">
           <div className="flex-shrink-0">
             <Link to="/" className="flex items-center space-x-2">
-              <HiRoad className="h-8 w-8 text-primary" />
+              <HiGlobeAmericas className="h-8 w-8 text-primary" />
               <span className="font-bold text-xl text-slate-900 tracking-tight">RoadAI</span>
             </Link>
           </div>
