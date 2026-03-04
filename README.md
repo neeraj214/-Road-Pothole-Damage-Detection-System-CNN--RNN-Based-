@@ -2,20 +2,21 @@
 
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg?style=for-the-badge&logo=python)](https://www.python.org/)
 [![TensorFlow](https://img.shields.io/badge/TensorFlow-2.10%2B-orange.svg?style=for-the-badge&logo=tensorflow)](https://www.tensorflow.org/)
-[![OpenCV](https://img.shields.io/badge/OpenCV-4.6%2B-green.svg?style=for-the-badge&logo=opencv)](https://opencv.org/)
-[![Streamlit](https://img.shields.io/badge/Streamlit-1.15%2B-red.svg?style=for-the-badge&logo=streamlit)](https://streamlit.io/)
-[![MIT License](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.104%2B-009688.svg?style=for-the-badge&logo=fastapi)](https://fastapi.tiangolo.com/)
+[![React](https://img.shields.io/badge/React-18.2%2B-61DAFB.svg?style=for-the-badge&logo=react)](https://reactjs.org/)
+[![TailwindCSS](https://img.shields.io/badge/TailwindCSS-3.3%2B-38B2AC.svg?style=for-the-badge&logo=tailwind-css)](https://tailwindcss.com/)
 
-An advanced deep learning system designed to automatically detect and classify road potholes and surface damage using Convolutional Neural Networks (CNN). This project focuses on high accuracy and real-time deployment potential.
+An advanced deep learning system designed to automatically detect and classify road potholes and surface damage using Convolutional Neural Networks (CNN). This project features a high-performance **MobileNetV2** backend and a modern **React + TailwindCSS** dashboard.
 
 ---
 
 ## 🚀 Key Features
 
-- **CNN-Based Detection**: Leverages Transfer Learning with **MobileNetV2** for optimized performance.
-- **Automated Data Pipeline**: Robust data loading and preprocessing with real-time augmentation.
-- **Production Ready**: Modular structure designed for scalability and maintainability.
-- **Interactive UI**: (Upcoming) Streamlit-based dashboard for easy image and video analysis.
+- **Multi-Class Detection**: Detects **Potholes**, **Surface Cracks**, and **Healthy Roads** using RDD2022 dataset integration.
+- **Transfer Learning**: Optimized MobileNetV2 architecture for high accuracy with low computational overhead.
+- **Modern Dashboard**: Responsive React frontend with glassmorphism UI, real-time image preview, and animated results.
+- **Production API**: Scalable FastAPI backend with CORS support and automated model loading.
+- **Automated Data Pipeline**: Robust processing script to organize multi-national RDD2022 data (India & Japan) into training-ready formats.
 
 ---
 
@@ -25,30 +26,34 @@ An advanced deep learning system designed to automatically detect and classify r
 Road-Pothole-Damage-Detection-System/
 │
 ├── data/
-│   ├── raw/             # Training, validation, and test images
+│   ├── raw/             # Sorted RDD2022 images (pothole, crack, normal)
 │   └── processed/       # Preprocessed image data
 │
-├── models/              # Saved model checkpoints (.h5, .keras)
+├── frontend/            # React + Vite + TailwindCSS Frontend
+│   ├── src/             # Component-based modular architecture
+│   └── vite.config.js   # Vite configuration
 │
-├── src/                 # Core Source Code
-│   ├── config.py        # Centralized hyperparameters & paths
-│   ├── data_loader.py   # Data generators & augmentation
-│   ├── model.py         # CNN architecture implementation
-│   ├── train.py         # Training scripts
-│   └── utils.py         # Helper functions
+├── models/              # Saved model checkpoints (.h5)
 │
-├── app.py               # Streamlit application
-└── requirements.txt     # Project dependencies
+├── src/                 # Core Python Backend Logic
+│   ├── config.py        # Centralized hyperparameters (3-class system)
+│   ├── data_loader.py   # Data generators & real-time augmentation
+│   ├── model.py         # CNN (MobileNetV2) implementation
+│   └── train.py         # Training & evaluation scripts
+│
+├── app.py               # FastAPI production server
+└── requirements.txt     # Backend dependencies
 ```
 
 ---
 
 ## 🛠️ Tech Stack
 
-- **Deep Learning**: TensorFlow / Keras
-- **Computer Vision**: OpenCV
-- **Data Augmentation**: Albumentations / Keras Preprocessing
-- **Web App**: Streamlit
+- **Deep Learning**: TensorFlow / Keras (MobileNetV2)
+- **Backend API**: FastAPI / Uvicorn
+- **Frontend**: React 18 / Vite / TailwindCSS / Framer Motion
+- **Data Handling**: NumPy / Pillow / OpenCV
+- **Dataset**: RDD2022 (Multi-national Road Damage Dataset)
 
 ---
 
@@ -60,20 +65,17 @@ Road-Pothole-Damage-Detection-System/
    cd -Road-Pothole-Damage-Detection-System-CNN--RNN-Based-
    ```
 
-2. **Install dependencies**:
+2. **Backend Setup**:
    ```bash
    pip install -r requirements.txt
+   python app.py  # Starts FastAPI on http://localhost:8000
    ```
 
-3. **Data Preparation**:
-   Place your dataset in `data/raw/` following this structure:
-   ```text
-   data/raw/
-   ├── train/
-   │   ├── pothole/
-   │   └── normal/
-   ├── val/
-   └── test/
+3. **Frontend Setup**:
+   ```bash
+   cd frontend
+   npm install
+   npm run dev    # Starts Vite on http://localhost:5173
    ```
 
 ---
@@ -81,41 +83,30 @@ Road-Pothole-Damage-Detection-System/
 ## 🧪 Usage
 
 ### Training the Model
-To start training the CNN model with the configured hyperparameters:
+To train the CNN model on the organized RDD2022 dataset:
 ```bash
 python -m src.train
 ```
 This will:
-- Load data from `data/raw/`
-- Build the MobileNetV2-based model
-- Train with EarlyStopping, ModelCheckpoint, and ReduceLROnPlateau
-- Save the best model to `models/best_model.h5`
-- Save the final model to `models/final_model.h5`
+- Load data from `data/raw/` (3 classes: pothole, crack, normal).
+- Build the MobileNetV2-based model.
+- Train with **EarlyStopping**, **ModelCheckpoint**, and **ReduceLROnPlateau**.
+- Save the best model to `models/best_model.h5`.
 
 ---
 
 ## 🏗️ Phase-wise Progress
 
 - [x] **PHASE 1**: Project Setup & Configuration
-- [x] **PHASE 2**: Data Pipeline & Preprocessing
-- [x] **PHASE 3**: CNN Model Implementation
-- [x] **PHASE 4**: Model Training & Evaluation
-- [ ] **PHASE 5**: Streamlit App Development (Current)
+- [x] **PHASE 2**: Data Pipeline & RDD2022 Integration
+- [x] **PHASE 3**: CNN Model Implementation (MobileNetV2)
+- [x] **PHASE 4**: FastAPI Backend & React Frontend
+- [ ] **PHASE 5**: Model Training & Hyperparameter Tuning (Ready to Start)
 
 ---
 
 ## 🤝 Contributing
-
 Contributions are welcome! Please feel free to submit a Pull Request.
 
----
-
 ## 📜 License
-
 Distributed under the MIT License. See `LICENSE` for more information.
-
----
-
-<div align="center">
-  <sub>Developed with ❤️ by <a href="https://github.com/neeraj214">Neeraj Negi</a></sub>
-</div>
