@@ -1,5 +1,6 @@
 import os
 import numpy as np
+import base64
 try:
     import tensorflow as tf
 except ImportError:
@@ -35,7 +36,8 @@ def load_trained_model():
     
     if os.path.exists(model_path):
         try:
-            model = tf.keras.models.load_model(model_path)
+            # Load model with custom metrics if necessary, but compile=False is safer for loading weights
+            model = tf.keras.models.load_model(model_path, compile=False)
             logger.info(f"Successfully loaded model from {model_path}")
         except Exception as e:
             logger.error(f"Error loading model: {e}")
@@ -51,6 +53,33 @@ async def startup_event():
 async def root():
     return {"message": "Road Pothole Detection API is running"}
 
+def calculate_rps_score(mask):
+    """Calculates Road Pothole Severity (RPS) score based on weighted mask density."""
+    # mask: (H, W) with values 0, 1, 2, 3
+    rps_score = 0
+    total_pixels = mask.size
+    
+    for class_idx, weight in enumerate(config.RPS_WEIGHTS.values()):
+        if weight == 0: continue
+        pixels_count = np.sum(mask == class_idx)
+        rps_score += (pixels_count / total_pixels) * weight * 100
+        
+    return round(float(rps_score), 2)
+
+def mask_to_base64(mask):
+    """Converts a multi-class mask (0-3) to a base64 encoded PNG image."""
+    # mask: (H, W) with values 0, 1, 2, 3
+    # Multiply by 64 to make it visible (0, 64, 128, 192) or just keep as indices
+    # We'll keep as raw indices 0-3 for the frontend to map
+    mask_img = mask.astype(np.uint8)
+    if mask_img.ndim == 3 and mask_img.shape[-1] == 1:
+        mask_img = np.squeeze(mask_img, axis=-1)
+    
+    img = Image.fromarray(mask_img, mode='L')
+    buffered = io.BytesIO()
+    img.save(buffered, format="PNG")
+    return base64.b64encode(buffered.getvalue()).decode()
+
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
     global model
@@ -65,32 +94,67 @@ async def predict(file: UploadFile = File(...)):
         image = Image.open(io.BytesIO(contents)).convert('RGB')
         
         # Resize to match model input shape (224, 224)
-        image = image.resize((config.INPUT_SHAPE[0], config.INPUT_SHAPE[1]))
+        image_resized = image.resize((config.INPUT_SHAPE[0], config.INPUT_SHAPE[1]))
         
         # Convert to numpy array and normalize
-        img_array = np.array(image) / 255.0
+        img_array = np.array(image_resized) / 255.0
         img_array = np.expand_dims(img_array, axis=0)  # Add batch dimension
 
         # 3. Perform prediction
         if model is not None:
             predictions = model.predict(img_array)
-            class_idx = np.argmax(predictions[0])
-            confidence = float(predictions[0][class_idx])
+            # Dual-head model returns [cls_output, seg_output]
+            cls_pred = predictions[0][0]
+            seg_pred = predictions[1][0] # (H, W, 4)
+            
+            class_idx = np.argmax(cls_pred)
+            confidence = float(cls_pred[class_idx])
             prediction_class = config.CLASSES[class_idx]
+            
+            # Post-process mask: Argmax over channels to get (H, W) with 0-3
+            mask = np.argmax(seg_pred, axis=-1)
+            rps_score = calculate_rps_score(mask)
+            mask_base64 = mask_to_base64(mask)
+            
         else:
             # Mock response if model is not loaded (for testing frontend)
             import random
             prediction_class = random.choice(config.CLASSES)
             confidence = random.uniform(0.85, 0.99)
-            logger.info("Using mock prediction because model is not loaded.")
+            
+            # Create a mock multi-class mask
+            mock_mask = np.zeros((config.INPUT_SHAPE[0], config.INPUT_SHAPE[1]), dtype=np.uint8)
+            if prediction_class != "normal":
+                yy, xx = np.mgrid[:224, :224]
+                # Different circles for different severity
+                if prediction_class == "pothole":
+                    # Deep pothole (index 3)
+                    circle = (xx - 112)**2 + (yy - 112)**2 < 50**2
+                    mock_mask[circle] = 3
+                else:
+                    # Cracks (index 1 or 2)
+                    circle1 = (xx - 80)**2 + (yy - 80)**2 < 30**2
+                    mock_mask[circle1] = 1
+                    circle2 = (xx - 150)**2 + (yy - 150)**2 < 40**2
+                    mock_mask[circle2] = 2
+            
+            rps_score = calculate_rps_score(mock_mask)
+            mask_base64 = mask_to_base64(mock_mask)
+            
+            logger.info("Using mock multi-class prediction and mask.")
 
         return {
             "class": prediction_class.capitalize(),
-            "confidence": confidence
+            "confidence": confidence,
+            "rps_score": rps_score,
+            "mask": mask_base64,
+            "seg_classes": config.SEG_CLASSES
         }
 
     except Exception as e:
         logger.error(f"Prediction error: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
