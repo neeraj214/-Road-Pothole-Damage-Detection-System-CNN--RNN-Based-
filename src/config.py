@@ -19,9 +19,23 @@ LEARNING_RATE = 0.0001
 VALIDATION_SPLIT = 0.2
 RANDOM_SEED = 42
 
-# Classes
+# Classification Classes (Image-level)
 CLASSES = ["pothole", "crack", "normal"]
 NUM_CLASSES = len(CLASSES)
+
+# Segmentation Classes (Pixel-level)
+# 0: Background, 1: Hairline Crack, 2: Alligator Crack, 3: Deep Pothole
+SEG_CLASSES = ["background", "hairline_crack", "alligator_crack", "deep_pothole"]
+NUM_SEG_CLASSES = len(SEG_CLASSES)
+
+# Repair Priority Score (RPS) Weights
+# Assign higher weight to more severe damages
+RPS_WEIGHTS = {
+    "background": 0.0,
+    "hairline_crack": 1.0,
+    "alligator_crack": 2.5,
+    "deep_pothole": 5.0
+}
 
 # Augmentation Config
 AUGMENTATION_PARAMS = {
