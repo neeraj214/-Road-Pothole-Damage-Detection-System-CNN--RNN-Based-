@@ -59,7 +59,7 @@ def main():
     )
 
     # 5. Train the Model
-    logger.info(f"Starting training for {EPOCHS} epochs...")
+    logger.info(f"Starting joint training for {EPOCHS} epochs...")
     history = model.fit(
         train_generator,
         validation_data=val_generator,
@@ -76,9 +76,12 @@ def main():
     logger.info("-------------------------------------------------")
     logger.info("Training completed successfully!")
     
-    # Extract best validation accuracy from history
-    best_val_acc = max(history.history['val_accuracy'])
-    logger.info(f"Best Validation Accuracy: {best_val_acc:.4f}")
+    # Extract best validation metrics from history
+    best_val_cls_acc = max(history.history['val_classification_output_accuracy'])
+    best_val_seg_acc = max(history.history['val_segmentation_output_accuracy'])
+    
+    logger.info(f"Best Validation Classification Accuracy: {best_val_cls_acc:.4f}")
+    logger.info(f"Best Validation Segmentation Accuracy: {best_val_seg_acc:.4f}")
     logger.info(f"Best model saved to: {best_model_path}")
     logger.info(f"Final model saved to: {final_model_path}")
     logger.info("-------------------------------------------------")
