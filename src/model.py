@@ -1,111 +1,154 @@
 import tensorflow as tf
 from tensorflow.keras import layers, models, Model
 from tensorflow.keras.applications import MobileNetV2
-from tensorflow.keras.optimizers import Adam
+import numpy as np
 import logging
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def build_model(config):
-    """
-    Builds and compiles a Dual-head model (Classification + Segmentation) 
-    using Transfer Learning with MobileNetV2 as shared encoder.
+# Constants
+NUM_SEG_CLASSES = 4   # background + 3 damage types (hairline crack, alligator crack, pothole)
+NUM_CLS_CLASSES = 3   # normal / crack / pothole
 
-    Args:
-        config: Configuration module or object containing hyperparameters.
-
-    Returns:
-        tf.keras.Model: Compiled Keras model.
+def decoder_block(x, skip, filters, name):
     """
+    U-Net Decoder Block: UpSampling2D -> Concatenate -> Conv2D -> BN -> ReLU -> Conv2D -> BN -> ReLU
+    """
+    x = layers.UpSampling2D(size=(2, 2), interpolation="bilinear", name=f"{name}_upsample")(x)
+    x = layers.Concatenate(name=f"{name}_concat")([x, skip])
     
-    logger.info(f"Building dual-head model with input shape: {config.INPUT_SHAPE}")
+    # Conv Block 1
+    x = layers.Conv2D(filters, (3, 3), padding="same", name=f"{name}_conv1")(x)
+    x = layers.BatchNormalization(name=f"{name}_bn1")(x)
+    x = layers.Activation("relu", name=f"{name}_relu1")(x)
+    
+    # Conv Block 2
+    x = layers.Conv2D(filters, (3, 3), padding="same", name=f"{name}_conv2")(x)
+    x = layers.BatchNormalization(name=f"{name}_bn2")(x)
+    x = layers.Activation("relu", name=f"{name}_relu2")(x)
+    
+    return x
 
-    # 1. Base Model: MobileNetV2 (Shared Encoder)
+def build_dual_head_model(img_size=224, freeze_base=True):
+    """
+    Builds a dual-head model (Classification + Segmentation) using MobileNetV2 as shared backbone.
+    """
+    logger.info(f"Building Dual-Head Model with input size: ({img_size}, {img_size}, 3)")
+    
+    inputs = layers.Input(shape=(img_size, img_size, 3), name="input_image")
+    
+    # 1. SHARED BACKBONE: MobileNetV2
     base_model = MobileNetV2(
         include_top=False,
         weights="imagenet",
-        input_shape=config.INPUT_SHAPE
+        input_tensor=inputs
     )
+    
+    if freeze_base:
+        base_model.trainable = False
+        logger.info("MobileNetV2 backbone frozen for Stage 1 training.")
+    else:
+        base_model.trainable = True
+        logger.info("MobileNetV2 backbone unfrozen for Stage 2 joint fine-tuning.")
 
-    # 2. Select layers for skip connections and classification
-    # These names are specific to MobileNetV2
-    layer_names = [
+    # Extract skip connections
+    # Layer names are confirmed for MobileNetV2 (224x224 input)
+    skip_layers = [
         "block_1_expand_relu",   # 112x112
         "block_3_expand_relu",   # 56x56
         "block_6_expand_relu",   # 28x28
         "block_13_expand_relu",  # 14x14
-        "out_relu"               # 7x7
+        "out_relu"               # 7x7 (bottleneck)
     ]
-    layers_outputs = [base_model.get_layer(name).output for name in layer_names]
-
-    # Create the feature extraction model
-    encoder = Model(inputs=base_model.input, outputs=layers_outputs, name="encoder")
-    encoder.trainable = False  # Initially frozen
     
-    inputs = layers.Input(shape=config.INPUT_SHAPE)
-    skips = encoder(inputs)
-    
-    # 3. Classification Head
-    # Use the last layer from encoder for classification
+    skips = [base_model.get_layer(name).output for name in skip_layers]
     bottleneck = skips[-1]
-    x = layers.GlobalAveragePooling2D()(bottleneck)
-    x = layers.Dense(128, activation="relu")(x)
-    x = layers.Dropout(0.5)(x)
-    num_classes = len(config.CLASSES)
-    cls_output = layers.Dense(num_classes, activation="softmax", name="classification_output")(x)
-
-    # 4. Segmentation Decoder (UNet-like)
-    def upsample_block(x, skip, filters, name):
-        x = layers.Conv2DTranspose(filters, (3, 3), strides=(2, 2), padding="same")(x)
-        x = layers.Concatenate()([x, skip])
-        x = layers.Conv2D(filters, (3, 3), padding="same", activation="relu")(x)
-        x = layers.Conv2D(filters, (3, 3), padding="same", activation="relu")(x)
-        return x
-
-    # Upsampling
-    u1 = upsample_block(bottleneck, skips[3], 256, "up1")  # 7x7 -> 14x14
-    u2 = upsample_block(u1, skips[2], 128, "up2")         # 14x14 -> 28x28
-    u3 = upsample_block(u2, skips[1], 64, "up3")          # 28x28 -> 56x56
-    u4 = upsample_block(u3, skips[0], 32, "up4")          # 56x56 -> 112x112
     
-    # Final upsampling to original size (224, 224)
-    u5 = layers.Conv2DTranspose(16, (3, 3), strides=(2, 2), padding="same")(u4)
-    # Output 4 channels for pixel-level severity (background, hairline, alligator, deep)
-    seg_output = layers.Conv2D(config.NUM_SEG_CLASSES, (1, 1), activation="softmax", name="segmentation_output")(u5)
-
-    # 5. Construct Final Model
-    model = Model(inputs=inputs, outputs=[cls_output, seg_output], name="Road_Pothole_DualHead_Model")
-
-    # 6. Compile Model
-    logger.info(f"Compiling model with Adam optimizer (learning rate={config.LEARNING_RATE})...")
-    optimizer = Adam(learning_rate=config.LEARNING_RATE)
+    # 2. CLASSIFICATION HEAD
+    cls_x = layers.GlobalAveragePooling2D(name="cls_gap")(bottleneck)
+    cls_x = layers.Dense(256, activation="relu", name="cls_dense")(cls_x)
+    cls_x = layers.Dropout(0.4, name="cls_dropout")(cls_x)
+    cls_output = layers.Dense(NUM_CLS_CLASSES, activation="softmax", name="cls_output")(cls_x)
     
-    model.compile(
-        optimizer=optimizer,
-        loss={
-            "classification_output": "categorical_crossentropy",
-            "segmentation_output": "categorical_crossentropy" # One-hot masks
-        },
-        loss_weights={
-            "classification_output": 1.0,
-            "segmentation_output": 2.0  # Slightly more weight on segmentation
-        },
-        metrics={
-            "classification_output": "accuracy",
-            "segmentation_output": ["accuracy", tf.keras.metrics.MeanIoU(num_classes=config.NUM_SEG_CLASSES)]
-        }
-    )
+    # 3. U-NET DECODER HEAD
+    # d1: bottleneck (7x7) + skip_14x14 (14x14) -> 256 filters
+    d1 = decoder_block(bottleneck, skips[3], 256, name="dec1")
+    
+    # d2: d1 (14x14) + skip_28x28 (28x28) -> 128 filters
+    d2 = decoder_block(d1, skips[2], 128, name="dec2")
+    
+    # d3: d2 (28x28) + skip_56x56 (56x56) -> 64 filters
+    d3 = decoder_block(d2, skips[1], 64, name="dec3")
+    
+    # d4: d3 (56x56) + skip_112x112 (112x112) -> 32 filters
+    d4 = decoder_block(d3, skips[0], 32, name="dec4")
+    
+    # Final UpSampling to original 224x224
+    seg_x = layers.UpSampling2D(size=(2, 2), interpolation="bilinear", name="seg_final_upsample")(d4)
+    seg_output = layers.Conv2D(NUM_SEG_CLASSES, (1, 1), activation="softmax", name="seg_output")(seg_x)
+    
+    # Construct Model
+    model = Model(inputs=inputs, outputs=[cls_output, seg_output], name="Pothole_DualHead_CNN_UNet")
+    
+    return model
 
-    model.summary()
+def unfreeze_top_layers(model, num_layers=30):
+    """
+    Unfreezes the top N layers of the model for fine-tuning.
+    """
+    # Find the backbone (MobileNetV2 part)
+    # Since we used the functional API, the base_model layers are part of the main model
+    model.trainable = True
+    
+    # We want to keep the bottom layers frozen and only unfreeze the top ones
+    # MobileNetV2 has ~154 layers. 
+    # Let's freeze all layers first, then unfreeze the last 'num_layers'
+    for layer in model.layers[:-num_layers]:
+        layer.trainable = False
+    for layer in model.layers[-num_layers:]:
+        layer.trainable = True
+        
+    logger.info(f"Unfrozen the top {num_layers} layers for fine-tuning.")
     return model
 
 if __name__ == "__main__":
-    # Quick test if run directly
+    # Quick architecture test
     try:
-        from src import config
-        model = build_model(config)
-        logger.info("Successfully built and compiled the model.")
+        # 1. Build the model with freeze_base=True
+        model = build_dual_head_model(img_size=224, freeze_base=True)
+        
+        # 2. Print model summary
+        model.summary()
+        logger.info("Successfully built dual-head model.")
+        
+        # 3. Create a random input tensor np.random.rand(1, 224, 224, 3)
+        dummy_input = np.random.rand(1, 224, 224, 3).astype(np.float32)
+        
+        # 4. Run a forward pass
+        cls_output, seg_output = model.predict(dummy_input)
+        
+        # 5. Verify and print both output shapes
+        logger.info(f"Classification Output Shape: {cls_output.shape}")
+        logger.info(f"Segmentation Output Shape: {seg_output.shape}")
+        
+        # 6. Assert both shapes are correct
+        expected_cls_shape = (1, 3)
+        expected_seg_shape = (1, 224, 224, 4)
+        
+        assert cls_output.shape == expected_cls_shape, \
+            f"Incorrect cls_output shape! Expected {expected_cls_shape}, got {cls_output.shape}"
+        assert seg_output.shape == expected_seg_shape, \
+            f"Incorrect seg_output shape! Expected {expected_seg_shape}, got {seg_output.shape}"
+            
+        logger.info("Architecture verification passed! Output shapes are correct.")
+        
+        # Optional: Test unfreezing
+        model = unfreeze_top_layers(model, num_layers=30)
+        logger.info("Successfully unfrozen top layers for fine-tuning test.")
+        
     except Exception as e:
-        logger.error(f"Model building failed: {e}")
+        logger.error(f"Model architecture test failed: {e}")
+        import traceback
+        traceback.print_exc()
