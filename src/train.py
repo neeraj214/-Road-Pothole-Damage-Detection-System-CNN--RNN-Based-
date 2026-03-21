@@ -7,6 +7,8 @@ import matplotlib.pyplot as plt
 import logging
 from src.model import build_dual_head_model, unfreeze_top_layers
 from src.data_loader import build_generators
+from src.utils import bce_dice_loss
+from src import config
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -18,25 +20,6 @@ MASK_DIR = "data/processed/masks"
 MODELS_DIR = "models"
 LOGS_DIR = "logs"
 RESULTS_DIR = "results"
-
-@tf.keras.utils.register_keras_serializable()
-def bce_dice_loss(y_true, y_pred):
-    """
-    Combined Binary Crossentropy and Dice Loss.
-    """
-    # Flatten tensors using tf.reshape as requested
-    y_true_f = tf.reshape(y_true, [-1])
-    y_pred_f = tf.reshape(y_pred, [-1])
-    
-    # Dice calculation: 1 - (2 * sum(y_true * y_pred) + 1) / (sum(y_true) + sum(y_pred) + 1)
-    intersection = tf.reduce_sum(y_true_f * y_pred_f)
-    dice_coeff = (2. * intersection + 1.0) / (tf.reduce_sum(y_true_f) + tf.reduce_sum(y_pred_f) + 1.0)
-    dice_loss = 1.0 - dice_coeff
-    
-    # BCE calculation (categorical_crossentropy)
-    bce_loss = categorical_crossentropy(y_true, y_pred)
-    
-    return bce_loss + dice_loss
 
 def plot_training_history(history, save_path, stage_name):
     """
@@ -141,7 +124,7 @@ def stage1_train(epochs=15):
     )
     
     callbacks = [
-        ModelCheckpoint(os.path.join(MODELS_DIR, "stage1.keras"), monitor="val_cls_output_accuracy", save_best_only=True, verbose=1),
+        ModelCheckpoint(os.path.join(MODELS_DIR, "stage1.keras"), monitor="val_cls_output_accuracy", save_best_only=True, verbose=1, mode='max'),
         EarlyStopping(patience=5, restore_best_weights=True, verbose=1),
         ReduceLROnPlateau(factor=0.5, patience=3, verbose=1),
         TensorBoard(log_dir=os.path.join(LOGS_DIR, "stage1")),
@@ -179,7 +162,7 @@ def stage2_finetune(stage1_model_path, epochs=20):
     )
     
     callbacks = [
-        ModelCheckpoint(os.path.join(MODELS_DIR, "best_model_dual.keras"), monitor="val_loss", save_best_only=True, verbose=1),
+        ModelCheckpoint(os.path.join(MODELS_DIR, config.MODEL_FILENAME), monitor="val_loss", save_best_only=True, verbose=1),
         EarlyStopping(patience=7, restore_best_weights=True, verbose=1),
         ReduceLROnPlateau(factor=0.5, patience=3, verbose=1),
         TensorBoard(log_dir=os.path.join(LOGS_DIR, "stage2")),
@@ -189,7 +172,7 @@ def stage2_finetune(stage1_model_path, epochs=20):
     history = model.fit(train_gen, validation_data=val_gen, epochs=epochs, callbacks=callbacks, workers=0, use_multiprocessing=False)
     
     plot_training_history(history, os.path.join(RESULTS_DIR, "stage2_history.png"), "Stage 2")
-    logger.info(f"Final model saved: {os.path.join(MODELS_DIR, 'best_model_dual.keras')}")
+    logger.info(f"Final model saved: {os.path.join(MODELS_DIR, config.MODEL_FILENAME)}")
 
 if __name__ == "__main__":
     try:
