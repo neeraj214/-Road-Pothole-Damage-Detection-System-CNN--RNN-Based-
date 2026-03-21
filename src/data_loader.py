@@ -37,9 +37,14 @@ class PotholeDataGenerator(tf.keras.utils.Sequence):
         else:
             mask = np.zeros((224, 224), dtype=np.uint8)
             
-        # One-hot encode to (224, 224, 4) using tf.keras.utils.to_categorical
-        mask_one_hot = tf.keras.utils.to_categorical(mask, num_classes=4)
-        return mask_one_hot
+        # One-hot encode to (224, 224, 4) using NumPy for efficiency
+        try:
+            mask_one_hot = np.eye(4)[mask.astype(int)]
+            return mask_one_hot
+        except IndexError as e:
+            logger.error(f"Error one-hot encoding mask for {img_path}: {e}. Local values: {np.unique(mask)}")
+            # Fallback to background mask
+            return np.zeros((224, 224, 4), dtype=np.float32)
 
     def _augment(self, img, mask):
         """Apply identical spatial transforms to img and mask."""

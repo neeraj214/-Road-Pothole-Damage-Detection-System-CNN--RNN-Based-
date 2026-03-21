@@ -125,7 +125,7 @@ def stage1_train(epochs=15):
     os.makedirs(os.path.join(LOGS_DIR, "stage1"), exist_ok=True)
     os.makedirs(RESULTS_DIR, exist_ok=True)
     
-    train_gen, val_gen = build_generators(DATA_DIR, MASK_DIR, batch_size=16)
+    train_gen, val_gen = build_generators(DATA_DIR, MASK_DIR, batch_size=2)
     
     # Build model (frozen base)
     model = build_dual_head_model(freeze_base=True)
@@ -166,7 +166,7 @@ def stage2_finetune(stage1_model_path, epochs=20):
     # Unfreeze top layers
     model = unfreeze_top_layers(model, num_layers=30)
     
-    train_gen, val_gen = build_generators(DATA_DIR, MASK_DIR, batch_size=16)
+    train_gen, val_gen = build_generators(DATA_DIR, MASK_DIR, batch_size=4)
     
     model.compile(
         optimizer=Adam(learning_rate=1e-5),
@@ -186,7 +186,7 @@ def stage2_finetune(stage1_model_path, epochs=20):
         get_epoch_logger()
     ]
     
-    history = model.fit(train_gen, validation_data=val_gen, epochs=epochs, callbacks=callbacks)
+    history = model.fit(train_gen, validation_data=val_gen, epochs=epochs, callbacks=callbacks, workers=0, use_multiprocessing=False)
     
     plot_training_history(history, os.path.join(RESULTS_DIR, "stage2_history.png"), "Stage 2")
     logger.info(f"Final model saved: {os.path.join(MODELS_DIR, 'best_model_dual.keras')}")
