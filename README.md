@@ -98,10 +98,34 @@ This will:
 ## 🏗️ Phase-wise Progress
 
 - [x] **PHASE 1**: Project Setup & Configuration
-- [x] **PHASE 2**: Data Pipeline & RDD2022 Integration
-- [x] **PHASE 3**: CNN Model Implementation (MobileNetV2)
+- [x] **PHASE 2**: Data Pipeline & RDD2022 Integration (Masks Ready)
+- [x] **PHASE 3**: CNN Model Implementation (MobileNetV2 + U-Net)
 - [x] **PHASE 4**: FastAPI Backend & React Frontend
 - [ ] **PHASE 5**: Model Training & Hyperparameter Tuning (Ready to Start)
+
+---
+
+## 🚀 What to do next — in exact order
+
+### **Step 1 — Place the RDD2022 dataset**
+Ensure your dataset is organized in the following structure:
+- **Annotations**: `data/raw/annotations/instances_train.json`
+- **Images**: `data/raw/images/train/` (Place all `.jpg` images directly here)
+
+*Download RDD2022 from: [RoadDataset GitHub](https://github.com/sekilab/RoadDataset) or Kaggle search "RDD2022".*
+
+### **Step 2 — Generate masks on real data**
+Run the mask generation script to create pixel-level severity marks:
+```bash
+python -m src.generate_masks
+```
+
+### **Step 3 — Verify the output**
+Confirm that the masks have been generated in the `data/processed/masks/` folder:
+```bash
+ls data/processed/masks/ | wc -l
+# The count should match your image count in data/raw/images/train/
+```
 
 ---
 
