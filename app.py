@@ -11,6 +11,7 @@ from PIL import Image
 import io
 import logging
 from src import config
+from src.utils import bce_dice_loss
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -32,12 +33,16 @@ model = None
 
 def load_trained_model():
     global model
-    model_path = os.path.join(config.MODELS_DIR, "best_model.h5")
+    model_path = os.path.join(config.MODELS_DIR, config.MODEL_FILENAME)
     
     if os.path.exists(model_path):
         try:
-            # Load model with custom metrics if necessary, but compile=False is safer for loading weights
-            model = tf.keras.models.load_model(model_path, compile=False)
+            # Load model with custom objects
+            model = tf.keras.models.load_model(
+                model_path, 
+                custom_objects={"bce_dice_loss": bce_dice_loss},
+                compile=False
+            )
             logger.info(f"Successfully loaded model from {model_path}")
         except Exception as e:
             logger.error(f"Error loading model: {e}")
