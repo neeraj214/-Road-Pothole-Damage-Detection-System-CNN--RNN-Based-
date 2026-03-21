@@ -10,6 +10,7 @@ MODELS_DIR = BASE_DIR / "models"
 
 # Model Configuration
 MODEL_NAME = "pothole_detector_mobilenetv2"
+MODEL_FILENAME = "best_model_dual.keras"
 INPUT_SHAPE = (224, 224, 3)
 BATCH_SIZE = 32
 EPOCHS = 20
