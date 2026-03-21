@@ -166,7 +166,7 @@ def stage2_finetune(stage1_model_path, epochs=20):
     # Unfreeze top layers
     model = unfreeze_top_layers(model, num_layers=30)
     
-    train_gen, val_gen = build_generators(DATA_DIR, MASK_DIR, batch_size=4)
+    train_gen, val_gen = build_generators(DATA_DIR, MASK_DIR, batch_size=2)
     
     model.compile(
         optimizer=Adam(learning_rate=1e-5),
