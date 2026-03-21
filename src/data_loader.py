@@ -27,6 +27,7 @@ class PotholeDataGenerator(tf.keras.utils.Sequence):
             np.random.shuffle(self.indices)
 
     def _load_mask(self, img_path):
+        """Construct mask path, load, resize, and one-hot encode."""
         image_stem = Path(img_path).stem
         mask_path = self.mask_dir / f"{image_stem}_mask.png"
         
@@ -36,16 +37,18 @@ class PotholeDataGenerator(tf.keras.utils.Sequence):
         else:
             mask = np.zeros((224, 224), dtype=np.uint8)
             
-        # One-hot encode to (224, 224, 4)
+        # One-hot encode to (224, 224, 4) using tf.keras.utils.to_categorical
         mask_one_hot = tf.keras.utils.to_categorical(mask, num_classes=4)
         return mask_one_hot
 
     def _augment(self, img, mask):
-        # IDENTICAL spatial transforms
+        """Apply identical spatial transforms to img and mask."""
+        # Horizontal Flip
         if np.random.rand() > 0.5:
             img = cv2.flip(img, 1)
             mask = cv2.flip(mask, 1)
             
+        # Vertical Flip
         if np.random.rand() > 0.5:
             img = cv2.flip(img, 0)
             mask = cv2.flip(mask, 0)
@@ -67,6 +70,8 @@ class PotholeDataGenerator(tf.keras.utils.Sequence):
         for i in batch_indices:
             img_path = self.img_paths[i]
             img = cv2.imread(img_path)
+            if img is None:
+                continue # Skip missing images
             img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             img = cv2.resize(img, (224, 224)) / 255.0
             
@@ -97,11 +102,14 @@ def build_generators(data_dir, mask_dir, batch_size=16, val_split=0.15):
         for img_name in os.listdir(cls_dir):
             if img_name.lower().endswith(('.png', '.jpg', '.jpeg')):
                 img_paths.append(os.path.join(cls_dir, img_name))
-                # One-hot encode classification label
+                # One-hot encode classification label (3 classes)
                 label = np.zeros(3)
                 label[idx] = 1
                 cls_labels.append(label)
                 
+    if not img_paths:
+        raise ValueError(f"No images found in {data_dir}")
+        
     train_imgs, val_imgs, train_labels, val_labels = train_test_split(
         img_paths, cls_labels, test_size=val_split, stratify=np.argmax(cls_labels, axis=1), random_state=42
     )
@@ -110,6 +118,7 @@ def build_generators(data_dir, mask_dir, batch_size=16, val_split=0.15):
     val_gen = PotholeDataGenerator(val_imgs, val_labels, mask_dir, batch_size=batch_size, augment=False)
     
     return train_gen, val_gen
+
 
 def load_and_preprocess_image(image_path, mask_path, class_id, target_size, num_classes, num_seg_classes):
     """Loads and preprocesses an image and its corresponding mask and label."""

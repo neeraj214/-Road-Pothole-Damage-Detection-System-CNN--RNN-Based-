@@ -50,3 +50,5 @@ ENV/
 frontend/node_modules/
 frontend/dist/
 frontend/package-lock.json
+
+Pothole-600 Dataset.zip

@@ -1,90 +1,201 @@
 import os
 import tensorflow as tf
-from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau, TensorBoard, LambdaCallback
+from tensorflow.keras.losses import categorical_crossentropy
+import matplotlib.pyplot as plt
 import logging
-from src.config import create_dirs, MODELS_DIR, EPOCHS
-from src.data_loader import get_data_generators
-from src.model import build_model
-from src import config
+from src.model import build_dual_head_model, unfreeze_top_layers
+from src.data_loader import build_generators
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def main():
+# Constants
+DATA_DIR = "data/raw/train" # Adjusted to find normal/crack/pothole subdirs
+MASK_DIR = "data/processed/masks"
+MODELS_DIR = "models"
+LOGS_DIR = "logs"
+RESULTS_DIR = "results"
+
+@tf.keras.utils.register_keras_serializable()
+def bce_dice_loss(y_true, y_pred):
     """
-    Main training script for the Road Pothole & Damage Detection System.
+    Combined Binary Crossentropy and Dice Loss.
     """
-    # 1. Ensure models/ directory exists
-    create_dirs()
-    if not os.path.exists(MODELS_DIR):
-        os.makedirs(MODELS_DIR)
-
-    # 2. Load Data Generators
-    logger.info("Loading data generators...")
-    try:
-        train_generator, val_generator, test_generator = get_data_generators(config)
-    except Exception as e:
-        logger.error(f"Failed to load data generators: {e}")
-        return
-
-    # 3. Build the Model
-    logger.info("Building model using build_model(config)...")
-    model = build_model(config)
-
-    # 4. Define Callbacks
-    # EarlyStopping: monitor="val_loss", patience=5, restore_best_weights=True
-    early_stopping = EarlyStopping(
-        monitor="val_loss",
-        patience=5,
-        restore_best_weights=True,
-        verbose=1
-    )
-
-    # ModelCheckpoint: filepath="models/best_model.h5", monitor="val_loss", save_best_only=True
-    best_model_path = os.path.join(MODELS_DIR, "best_model.h5")
-    model_checkpoint = ModelCheckpoint(
-        filepath=best_model_path,
-        monitor="val_loss",
-        save_best_only=True,
-        verbose=1
-    )
-
-    # ReduceLROnPlateau: monitor="val_loss", factor=0.2, patience=3
-    reduce_lr = ReduceLROnPlateau(
-        monitor="val_loss",
-        factor=0.2,
-        patience=3,
-        verbose=1
-    )
-
-    # 5. Train the Model
-    logger.info(f"Starting joint training for {EPOCHS} epochs...")
-    history = model.fit(
-        train_generator,
-        validation_data=val_generator,
-        epochs=EPOCHS,
-        callbacks=[early_stopping, model_checkpoint, reduce_lr],
-        verbose=1
-    )
-
-    # 6. Save final trained model to models/final_model.h5
-    final_model_path = os.path.join(MODELS_DIR, "final_model.h5")
-    model.save(final_model_path)
-
-    # 7. Print results
-    logger.info("-------------------------------------------------")
-    logger.info("Training completed successfully!")
+    # Flatten tensors using tf.reshape as requested
+    y_true_f = tf.reshape(y_true, [-1])
+    y_pred_f = tf.reshape(y_pred, [-1])
     
-    # Extract best validation metrics from history
-    best_val_cls_acc = max(history.history['val_classification_output_accuracy'])
-    best_val_seg_acc = max(history.history['val_segmentation_output_accuracy'])
+    # Dice calculation: 1 - (2 * sum(y_true * y_pred) + 1) / (sum(y_true) + sum(y_pred) + 1)
+    intersection = tf.reduce_sum(y_true_f * y_pred_f)
+    dice_coeff = (2. * intersection + 1.0) / (tf.reduce_sum(y_true_f) + tf.reduce_sum(y_pred_f) + 1.0)
+    dice_loss = 1.0 - dice_coeff
     
-    logger.info(f"Best Validation Classification Accuracy: {best_val_cls_acc:.4f}")
-    logger.info(f"Best Validation Segmentation Accuracy: {best_val_seg_acc:.4f}")
-    logger.info(f"Best model saved to: {best_model_path}")
-    logger.info(f"Final model saved to: {final_model_path}")
-    logger.info("-------------------------------------------------")
+    # BCE calculation (categorical_crossentropy)
+    bce_loss = categorical_crossentropy(y_true, y_pred)
+    
+    return bce_loss + dice_loss
+
+def plot_training_history(history, save_path, stage_name):
+    """
+    Creates a 2x2 matplotlib figure for monitoring training.
+    """
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    
+    keys = history.history.keys()
+    # Find matching keys in history
+    loss_key = [k for k in keys if 'loss' in k and 'val' not in k and '_' not in k][0]
+    cls_acc_key = [k for k in keys if 'cls_output_accuracy' in k and 'val' not in k][0]
+    seg_acc_key = [k for k in keys if 'seg_output_accuracy' in k and 'val' not in k][0]
+    lr_key = [k for k in keys if 'lr' in k][0] if any('lr' in k for k in keys) else None
+
+    epochs = range(1, len(history.history[loss_key]) + 1)
+    
+    plt.figure(figsize=(15, 12))
+    plt.suptitle(f"Training History - {stage_name}", fontsize=16)
+    
+    # Subplot 1: Total Loss
+    plt.subplot(2, 2, 1)
+    plt.plot(epochs, history.history[loss_key], 'b-', label='Train Loss')
+    plt.plot(epochs, history.history[f'val_{loss_key}'], 'r-', label='Val Loss')
+    plt.title('Total Loss')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.grid(True)
+    
+    # Subplot 2: Classification Accuracy
+    plt.subplot(2, 2, 2)
+    plt.plot(epochs, history.history[cls_acc_key], 'b-', label='Train Cls Acc')
+    plt.plot(epochs, history.history[f'val_{cls_acc_key}'], 'r-', label='Val Cls Acc')
+    plt.title('Classification Accuracy')
+    plt.xlabel('Epochs')
+    plt.ylabel('Accuracy')
+    plt.legend()
+    plt.grid(True)
+    
+    # Subplot 3: Segmentation Accuracy
+    plt.subplot(2, 2, 3)
+    plt.plot(epochs, history.history[seg_acc_key], 'b-', label='Train Seg Acc')
+    plt.plot(epochs, history.history[f'val_{seg_acc_key}'], 'r-', label='Val Seg Acc')
+    plt.title('Segmentation Accuracy')
+    plt.xlabel('Epochs')
+    plt.ylabel('Accuracy')
+    plt.legend()
+    plt.grid(True)
+    
+    # Subplot 4: Learning Rate
+    plt.subplot(2, 2, 4)
+    if lr_key:
+        plt.plot(epochs, history.history[lr_key], 'g-', label='Learning Rate')
+        plt.title('Learning Rate')
+        plt.xlabel('Epochs')
+        plt.ylabel('LR')
+        plt.yscale('log')
+        plt.legend()
+        plt.grid(True)
+    else:
+        plt.text(0.5, 0.5, 'LR info not available', ha='center')
+    
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    plt.savefig(save_path)
+    plt.close()
+    logger.info(f"History plot saved to {save_path}")
+
+def get_epoch_logger():
+    """Returns a LambdaCallback for custom epoch printing."""
+    return LambdaCallback(
+        on_epoch_end=lambda epoch, logs: print(
+            f"Epoch {epoch+1} | "
+            f"cls_acc: {logs.get('cls_output_accuracy', 0):.3f} | "
+            f"seg_acc: {logs.get('seg_output_accuracy', 0):.3f} | "
+            f"val_loss: {logs.get('val_loss', 0):.3f} | "
+            f"LR: {logs.get('lr', 0):.7f}"
+        )
+    )
+
+def stage1_train(epochs=15):
+    """
+    STAGE 1: Training heads only with a frozen MobileNetV2 backbone.
+    """
+    logger.info("Starting STAGE 1: Head training...")
+    os.makedirs(MODELS_DIR, exist_ok=True)
+    os.makedirs(os.path.join(LOGS_DIR, "stage1"), exist_ok=True)
+    os.makedirs(RESULTS_DIR, exist_ok=True)
+    
+    train_gen, val_gen = build_generators(DATA_DIR, MASK_DIR, batch_size=16)
+    
+    # Build model (frozen base)
+    model = build_dual_head_model(freeze_base=True)
+    
+    model.compile(
+        optimizer=Adam(learning_rate=1e-3),
+        loss={
+            "cls_output": "categorical_crossentropy",
+            "seg_output": bce_dice_loss
+        },
+        loss_weights={"cls_output": 1.0, "seg_output": 2.0},
+        metrics={"cls_output": "accuracy", "seg_output": "accuracy"}
+    )
+    
+    callbacks = [
+        ModelCheckpoint(os.path.join(MODELS_DIR, "stage1.keras"), monitor="val_cls_output_accuracy", save_best_only=True, verbose=1),
+        EarlyStopping(patience=5, restore_best_weights=True, verbose=1),
+        ReduceLROnPlateau(factor=0.5, patience=3, verbose=1),
+        TensorBoard(log_dir=os.path.join(LOGS_DIR, "stage1")),
+        get_epoch_logger()
+    ]
+    
+    history = model.fit(train_gen, validation_data=val_gen, epochs=epochs, callbacks=callbacks)
+    
+    plot_training_history(history, os.path.join(RESULTS_DIR, "stage1_history.png"), "Stage 1")
+    return os.path.join(MODELS_DIR, "stage1.keras")
+
+def stage2_finetune(stage1_model_path, epochs=20):
+    """
+    STAGE 2: Fine-tuning top layers of MobileNetV2.
+    """
+    logger.info("Starting STAGE 2: Fine-tuning backbone...")
+    os.makedirs(os.path.join(LOGS_DIR, "stage2"), exist_ok=True)
+    
+    # Load Stage 1 model
+    model = tf.keras.models.load_model(stage1_model_path, custom_objects={"bce_dice_loss": bce_dice_loss})
+    
+    # Unfreeze top layers
+    model = unfreeze_top_layers(model, num_layers=30)
+    
+    train_gen, val_gen = build_generators(DATA_DIR, MASK_DIR, batch_size=16)
+    
+    model.compile(
+        optimizer=Adam(learning_rate=1e-5),
+        loss={
+            "cls_output": "categorical_crossentropy",
+            "seg_output": bce_dice_loss
+        },
+        loss_weights={"cls_output": 1.0, "seg_output": 2.0},
+        metrics={"cls_output": "accuracy", "seg_output": "accuracy"}
+    )
+    
+    callbacks = [
+        ModelCheckpoint(os.path.join(MODELS_DIR, "best_model_dual.keras"), monitor="val_loss", save_best_only=True, verbose=1),
+        EarlyStopping(patience=7, restore_best_weights=True, verbose=1),
+        ReduceLROnPlateau(factor=0.5, patience=3, verbose=1),
+        TensorBoard(log_dir=os.path.join(LOGS_DIR, "stage2")),
+        get_epoch_logger()
+    ]
+    
+    history = model.fit(train_gen, validation_data=val_gen, epochs=epochs, callbacks=callbacks)
+    
+    plot_training_history(history, os.path.join(RESULTS_DIR, "stage2_history.png"), "Stage 2")
+    logger.info(f"Final model saved: {os.path.join(MODELS_DIR, 'best_model_dual.keras')}")
 
 if __name__ == "__main__":
-    main()
+    try:
+        stage1_path = stage1_train(epochs=15)
+        stage2_finetune(stage1_path, epochs=20)
+    except Exception as e:
+        logger.error(f"Training failed: {e}")
+        import traceback
+        traceback.print_exc()
