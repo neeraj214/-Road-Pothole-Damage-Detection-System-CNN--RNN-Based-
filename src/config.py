@@ -21,7 +21,7 @@ VALIDATION_SPLIT = 0.2
 RANDOM_SEED = 42
 
 # Classification Classes (Image-level)
-CLASSES = ["pothole", "normal"]
+CLASSES = ["normal", "crack", "pothole"]
 NUM_CLASSES = len(CLASSES)
 
 # Segmentation Classes (Pixel-level)
