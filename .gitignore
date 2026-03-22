@@ -45,6 +45,13 @@ Thumbs.db
 .venv
 venv/
 ENV/
+gpu_env/
+
+# Logs and Results
+logs/
+results/
+*.log
+nee.py
 
 # Frontend
 frontend/node_modules/
