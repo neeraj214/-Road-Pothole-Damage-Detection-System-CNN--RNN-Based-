@@ -1,5 +1,16 @@
 import os
 import tensorflow as tf
+
+# Step 6: Configure GPU memory growth
+gpus = tf.config.list_physical_devices('GPU')
+if gpus:
+    try:
+        for gpu in gpus:
+            tf.config.experimental.set_memory_growth(gpu, True)
+        print(f"GPUs found and memory growth enabled: {gpus}")
+    except RuntimeError as e:
+        print(f"Memory growth config error: {e}")
+
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau, TensorBoard, LambdaCallback
 from tensorflow.keras.losses import categorical_crossentropy
@@ -169,7 +180,7 @@ def stage2_finetune(stage1_model_path, epochs=20):
         get_epoch_logger()
     ]
     
-    history = model.fit(train_gen, validation_data=val_gen, epochs=epochs, callbacks=callbacks, workers=0, use_multiprocessing=False)
+    history = model.fit(train_gen, validation_data=val_gen, epochs=epochs, callbacks=callbacks)
     
     plot_training_history(history, os.path.join(RESULTS_DIR, "stage2_history.png"), "Stage 2")
     logger.info(f"Final model saved: {os.path.join(MODELS_DIR, config.MODEL_FILENAME)}")

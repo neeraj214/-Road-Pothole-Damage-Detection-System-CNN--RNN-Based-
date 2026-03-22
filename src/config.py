@@ -2,11 +2,14 @@ import os
 from pathlib import Path
 
 # Base Paths
-BASE_DIR = Path(__file__).resolve().parent.parent
-DATA_DIR = BASE_DIR / "data"
-RAW_DATA_DIR = DATA_DIR / "raw"
-PROCESSED_DATA_DIR = DATA_DIR / "processed"
-MODELS_DIR = BASE_DIR / "models"
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA_DIR = os.path.join(BASE_DIR, "data")
+RAW_DATA_DIR = os.path.join(DATA_DIR, "raw")
+TRAIN_DIR = os.path.join(RAW_DATA_DIR, "train")
+VAL_DIR = os.path.join(RAW_DATA_DIR, "val")
+MASK_DIR = os.path.join(DATA_DIR, "processed", "masks")
+MODELS_DIR = os.path.join(BASE_DIR, "models")
+RESULTS_DIR = os.path.join(BASE_DIR, "results")
 
 # Model Configuration
 MODEL_NAME = "pothole_detector_mobilenetv2"
@@ -51,8 +54,9 @@ AUGMENTATION_PARAMS = {
 
 def create_dirs():
     """Ensure all required directories exist."""
-    for path in [RAW_DATA_DIR, PROCESSED_DATA_DIR, MODELS_DIR]:
-        path.mkdir(parents=True, exist_ok=True)
+    for path in [DATA_DIR, RAW_DATA_DIR, TRAIN_DIR, VAL_DIR, MASK_DIR, MODELS_DIR, RESULTS_DIR]:
+        if not os.path.exists(path):
+            os.makedirs(path, exist_ok=True)
 
 if __name__ == "__main__":
     create_dirs()
