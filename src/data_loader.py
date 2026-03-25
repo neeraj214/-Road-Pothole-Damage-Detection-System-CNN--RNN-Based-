@@ -5,17 +5,41 @@ import numpy as np
 import cv2
 from pathlib import Path
 from sklearn.model_selection import train_test_split
+import albumentations as A
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+def get_augmentations(img_size=256):
+    """
+    Advanced Albumentations pipeline for high-accuracy classification.
+    """
+    return A.Compose([
+        A.Resize(img_size, img_size),
+        A.HorizontalFlip(p=0.5),
+        A.VerticalFlip(p=0.2),
+        A.RandomRotate90(p=0.2),
+        A.ShiftScaleRotate(shift_limit=0.0625, scale_limit=0.1, rotate_limit=15, p=0.5),
+        A.OneOf([
+            A.MotionBlur(p=0.2),
+            A.MedianBlur(blur_limit=3, p=0.1),
+            A.Blur(blur_limit=3, p=0.1),
+        ], p=0.3),
+        A.OneOf([
+            A.RandomBrightnessContrast(p=0.5),            
+            A.HueSaturationValue(p=0.5),
+        ], p=0.5),
+    ], additional_targets={'mask': 'mask'})
+
 class PotholeDataGenerator(tf.keras.utils.Sequence):
-    def __init__(self, img_paths, cls_labels, mask_dir, batch_size=16, augment=False):
+    def __init__(self, img_paths, cls_labels, mask_dir, batch_size=16, augment=False, img_size=256):
         self.img_paths = img_paths
         self.cls_labels = cls_labels
         self.mask_dir = Path(mask_dir)
         self.batch_size = batch_size
         self.augment = augment
+        self.img_size = img_size
+        self.aug_pipeline = get_augmentations(img_size) if augment else A.Resize(img_size, img_size)
         self.indices = np.arange(len(self.img_paths))
         self.on_epoch_end()
 
@@ -29,41 +53,21 @@ class PotholeDataGenerator(tf.keras.utils.Sequence):
     def _load_mask(self, img_path):
         """Construct mask path, load, resize, and one-hot encode."""
         image_stem = Path(img_path).stem
-        mask_path = self.mask_dir / f"{image_stem}_mask.png"
+        # Check for multiple possible mask naming conventions
+        mask_variants = [f"{image_stem}_mask.png", f"{image_stem}.png"]
+        mask_path = None
+        for variant in mask_variants:
+            if (self.mask_dir / variant).exists():
+                mask_path = self.mask_dir / variant
+                break
         
-        if mask_path.exists():
+        if mask_path:
             mask = cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE)
-            mask = cv2.resize(mask, (224, 224), interpolation=cv2.INTER_NEAREST)
+            mask = cv2.resize(mask, (self.img_size, self.img_size), interpolation=cv2.INTER_NEAREST)
         else:
-            mask = np.zeros((224, 224), dtype=np.uint8)
+            mask = np.zeros((self.img_size, self.img_size), dtype=np.uint8)
             
-        # One-hot encode to (224, 224, 4) using NumPy for efficiency
-        try:
-            mask_one_hot = np.eye(4)[mask.astype(int)]
-            return mask_one_hot
-        except IndexError as e:
-            logger.error(f"Error one-hot encoding mask for {img_path}: {e}. Local values: {np.unique(mask)}")
-            # Fallback to background mask
-            return np.zeros((224, 224, 4), dtype=np.float32)
-
-    def _augment(self, img, mask):
-        """Apply identical spatial transforms to img and mask."""
-        # Horizontal Flip
-        if np.random.rand() > 0.5:
-            img = cv2.flip(img, 1)
-            mask = cv2.flip(mask, 1)
-            
-        # Vertical Flip
-        if np.random.rand() > 0.5:
-            img = cv2.flip(img, 0)
-            mask = cv2.flip(mask, 0)
-
-        # Brightness jitter applies to img only
-        if np.random.rand() > 0.5:
-            brightness = np.random.uniform(0.8, 1.2)
-            img = np.clip(img * brightness, 0, 1)
-
-        return img, mask
+        return mask
 
     def __getitem__(self, index):
         batch_indices = self.indices[index * self.batch_size : (index + 1) * self.batch_size]
@@ -75,52 +79,87 @@ class PotholeDataGenerator(tf.keras.utils.Sequence):
         for i in batch_indices:
             img_path = self.img_paths[i]
             img = cv2.imread(img_path)
-            if img is None:
-                continue # Skip missing images
+            if img is None: continue
             img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-            img = cv2.resize(img, (224, 224)) / 255.0
             
+            # Resize image to target size BEFORE augmentation to match mask
+            img = cv2.resize(img, (self.img_size, self.img_size))
+            
+            # Load and resize mask (already uses INTER_NEAREST)
             mask = self._load_mask(img_path)
             
+            # Debug Safety Check
+            if img.shape[:2] != mask.shape[:2]:
+                raise ValueError(f"Height and Width mismatch BEFORE augmentation: "
+                                 f"Image {img.shape[:2]} vs Mask {mask.shape[:2]} for {img_path}")
+            
+            # Apply Albumentations
             if self.augment:
-                img, mask = self._augment(img, mask)
+                augmented = self.aug_pipeline(image=img, mask=mask)
+                img = augmented['image']
+                mask = augmented['mask']
+            else:
+                # Still need to ensure output size matches config
+                img = cv2.resize(img, (self.img_size, self.img_size))
+                mask = cv2.resize(mask, (self.img_size, self.img_size), interpolation=cv2.INTER_NEAREST)
                 
+            # Normalize image
+            img = img.astype(np.float32) / 255.0
+            
+            # One-hot encode mask (4 classes)
+            mask_one_hot = np.eye(4)[mask.astype(int)]
+            
             X.append(img)
             Y_cls.append(self.cls_labels[i])
-            Y_seg.append(mask)
+            Y_seg.append(mask_one_hot)
             
         return np.array(X), {
             "cls_output": np.array(Y_cls),
             "seg_output": np.array(Y_seg)
         }
 
-def build_generators(data_dir, mask_dir, batch_size=16, val_split=0.15):
+def build_generators(data_dir, mask_dir, batch_size=16, val_split=0.2, img_size=256):
+    """
+    Improved recursive scanner with advanced class detection.
+    """
     img_paths = []
     cls_labels = []
     
-    classes = ["normal", "crack", "pothole"]
-    for idx, cls_name in enumerate(classes):
-        cls_dir = os.path.join(data_dir, cls_name)
-        if not os.path.exists(cls_dir):
-            continue
-            
-        for img_name in os.listdir(cls_dir):
-            if img_name.lower().endswith(('.png', '.jpg', '.jpeg')):
-                img_paths.append(os.path.join(cls_dir, img_name))
-                # One-hot encode classification label (3 classes)
-                label = np.zeros(3)
-                label[idx] = 1
-                cls_labels.append(label)
+    logger.info(f"🔍 Scanning {data_dir} for images...")
+    valid_extensions = ('.png', '.jpg', '.jpeg', '.webp')
+    
+    for root, dirs, files in os.walk(data_dir):
+        for file in files:
+            if file.lower().endswith(valid_extensions):
+                img_path = os.path.join(root, file)
+                path_lower = img_path.lower()
                 
+                # Dynamic Class Assignment
+                if "pothole" in path_lower: label_idx = 2
+                elif "crack" in path_lower or "damage" in path_lower: label_idx = 1
+                else: label_idx = 0
+                
+                img_paths.append(img_path)
+                label = np.zeros(3)
+                label[label_idx] = 1
+                cls_labels.append(label)
+
     if not img_paths:
         raise ValueError(f"No images found in {data_dir}")
-        
+
+    # Log Distribution
+    dist = np.sum(cls_labels, axis=0)
+    logger.info(f"📊 Dataset: Normal={int(dist[0])}, Crack={int(dist[1])}, Pothole={int(dist[2])}")
+
     train_imgs, val_imgs, train_labels, val_labels = train_test_split(
-        img_paths, cls_labels, test_size=val_split, stratify=np.argmax(cls_labels, axis=1), random_state=42
+        img_paths, cls_labels, 
+        test_size=val_split, 
+        stratify=np.argmax(cls_labels, axis=1), 
+        random_state=42
     )
     
-    train_gen = PotholeDataGenerator(train_imgs, train_labels, mask_dir, batch_size=batch_size, augment=True)
-    val_gen = PotholeDataGenerator(val_imgs, val_labels, mask_dir, batch_size=batch_size, augment=False)
+    train_gen = PotholeDataGenerator(train_imgs, train_labels, mask_dir, batch_size=batch_size, augment=True, img_size=img_size)
+    val_gen = PotholeDataGenerator(val_imgs, val_labels, mask_dir, batch_size=batch_size, augment=False, img_size=img_size)
     
     return train_gen, val_gen
 
