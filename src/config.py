@@ -12,12 +12,12 @@ MODELS_DIR = os.path.join(BASE_DIR, "models")
 RESULTS_DIR = os.path.join(BASE_DIR, "results")
 
 # Model Configuration
-MODEL_NAME = "pothole_detector_mobilenetv2"
-MODEL_FILENAME = "best_model_dual.keras"
-INPUT_SHAPE = (224, 224, 3)
-BATCH_SIZE = 32
-EPOCHS = 20
-LEARNING_RATE = 0.0001
+MODEL_NAME = "pothole_detector_mobilenetv2_v3"
+MODEL_FILENAME = "best_model_dual_v3.keras"
+INPUT_SHAPE = (256, 256, 3) # Increased from 224 for better detail
+BATCH_SIZE = 16 # Optimized for RTX 2050 4GB VRAM at 256x256
+EPOCHS = 30
+LEARNING_RATE = 0.001
 
 # Training Parameters
 VALIDATION_SPLIT = 0.2
@@ -26,6 +26,10 @@ RANDOM_SEED = 42
 # Classification Classes (Image-level)
 CLASSES = ["normal", "crack", "pothole"]
 NUM_CLASSES = len(CLASSES)
+
+# Class Weights (Handled dynamically in train.py, but defined here for reference)
+# Usually Pothole and Crack are minority classes
+CLASS_WEIGHTS = {0: 1.0, 1: 2.0, 2: 3.0} 
 
 # Segmentation Classes (Pixel-level)
 # 0: Background, 1: Hairline Crack, 2: Alligator Crack, 3: Deep Pothole
