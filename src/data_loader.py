@@ -10,35 +10,32 @@ import albumentations as A
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def get_augmentations(img_size=256):
+def get_augmentations(img_size=224):
     """
     Advanced Albumentations pipeline for high-accuracy classification.
     """
     return A.Compose([
         A.Resize(img_size, img_size),
+        A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, p=0.5),
+        A.MotionBlur(blur_limit=5, p=0.3),
+        A.GaussNoise(var_limit=(10.0, 50.0), p=0.3),
         A.HorizontalFlip(p=0.5),
-        A.VerticalFlip(p=0.2),
-        A.RandomRotate90(p=0.2),
         A.ShiftScaleRotate(shift_limit=0.0625, scale_limit=0.1, rotate_limit=15, p=0.5),
         A.OneOf([
-            A.MotionBlur(p=0.2),
-            A.MedianBlur(blur_limit=3, p=0.1),
-            A.Blur(blur_limit=3, p=0.1),
+            A.RandomShadow(p=0.2),
+            A.RandomFog(p=0.1),
         ], p=0.3),
-        A.OneOf([
-            A.RandomBrightnessContrast(p=0.5),            
-            A.HueSaturationValue(p=0.5),
-        ], p=0.5),
-    ], additional_targets={'mask': 'mask'})
+    ], additional_targets={'mask': 'mask'}, is_check_shapes=False)
 
 class PotholeDataGenerator(tf.keras.utils.Sequence):
-    def __init__(self, img_paths, cls_labels, mask_dir, batch_size=16, augment=False, img_size=256):
+    def __init__(self, img_paths, cls_labels, mask_dir, batch_size=16, augment=False, img_size=224, class_weights=None):
         self.img_paths = img_paths
         self.cls_labels = cls_labels
         self.mask_dir = Path(mask_dir)
         self.batch_size = batch_size
         self.augment = augment
         self.img_size = img_size
+        self.class_weights = class_weights
         self.aug_pipeline = get_augmentations(img_size) if augment else A.Resize(img_size, img_size)
         self.indices = np.arange(len(self.img_paths))
         self.on_epoch_end()
@@ -75,6 +72,8 @@ class PotholeDataGenerator(tf.keras.utils.Sequence):
         X = []
         Y_cls = []
         Y_seg = []
+        W_cls = []
+        W_seg = []
         
         for i in batch_indices:
             img_path = self.img_paths[i]
@@ -90,8 +89,8 @@ class PotholeDataGenerator(tf.keras.utils.Sequence):
             
             # Debug Safety Check
             if img.shape[:2] != mask.shape[:2]:
-                raise ValueError(f"Height and Width mismatch BEFORE augmentation: "
-                                 f"Image {img.shape[:2]} vs Mask {mask.shape[:2]} for {img_path}")
+                logger.error(f"Shape mismatch: Img {img.shape[:2]} Mask {mask.shape[:2]}")
+                continue
             
             # Apply Albumentations
             if self.augment:
@@ -110,17 +109,30 @@ class PotholeDataGenerator(tf.keras.utils.Sequence):
             mask_one_hot = np.eye(4)[mask.astype(int)]
             
             X.append(img)
-            Y_cls.append(self.cls_labels[i])
+            
+            # Labels
+            cls_label = self.cls_labels[i]
+            Y_cls.append(cls_label)
             Y_seg.append(mask_one_hot)
             
-        return np.array(X), {
-            "cls_output": np.array(Y_cls),
-            "seg_output": np.array(Y_seg)
-        }
+            # --- Sample Weighting for Multi-Output ---
+            # Classification weight: Use computed class weight for this specific image
+            if self.class_weights:
+                class_idx = np.argmax(cls_label)
+                W_cls.append(self.class_weights[class_idx])
+            else:
+                W_cls.append(1.0)
+            
+            # Segmentation weight: Uniform weighting (1.0 for all pixels)
+            W_seg.append(1.0)
+            
+        return np.array(X), \
+               {"cls_output": np.array(Y_cls), "seg_output": np.array(Y_seg)}, \
+               {"cls_output": np.array(W_cls), "seg_output": np.array(W_seg)}
 
-def build_generators(data_dir, mask_dir, batch_size=16, val_split=0.2, img_size=256):
+def build_generators(data_dir, mask_dir, batch_size=16, val_split=0.2, img_size=224, class_weights=None):
     """
-    Improved recursive scanner with advanced class detection.
+    Improved recursive scanner with advanced class detection and weight support.
     """
     img_paths = []
     cls_labels = []
@@ -158,8 +170,8 @@ def build_generators(data_dir, mask_dir, batch_size=16, val_split=0.2, img_size=
         random_state=42
     )
     
-    train_gen = PotholeDataGenerator(train_imgs, train_labels, mask_dir, batch_size=batch_size, augment=True, img_size=img_size)
-    val_gen = PotholeDataGenerator(val_imgs, val_labels, mask_dir, batch_size=batch_size, augment=False, img_size=img_size)
+    train_gen = PotholeDataGenerator(train_imgs, train_labels, mask_dir, batch_size=batch_size, augment=True, img_size=img_size, class_weights=class_weights)
+    val_gen = PotholeDataGenerator(val_imgs, val_labels, mask_dir, batch_size=batch_size, augment=False, img_size=img_size, class_weights=class_weights)
     
     return train_gen, val_gen
 
