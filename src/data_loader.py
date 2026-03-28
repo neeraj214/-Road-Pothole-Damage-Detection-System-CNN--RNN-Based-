@@ -6,6 +6,7 @@ import cv2
 from pathlib import Path
 from sklearn.model_selection import train_test_split
 import albumentations as A
+from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -78,10 +79,8 @@ class PotholeDataGenerator(tf.keras.utils.Sequence):
             if img is None: continue
             img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             
-            # Resize image to target size BEFORE augmentation to match mask
-            img = cv2.resize(img, (self.img_size, self.img_size))
-            
-            # Load and resize mask (already uses INTER_NEAREST)
+            # BUG 8 FIX: Keep only the resize inside the else branch or in albumentations
+            # Load mask
             mask = self._load_mask(img_path)
             
             # Apply Albumentations
@@ -94,10 +93,11 @@ class PotholeDataGenerator(tf.keras.utils.Sequence):
                 img = cv2.resize(img, (self.img_size, self.img_size))
                 mask = cv2.resize(mask, (self.img_size, self.img_size), interpolation=cv2.INTER_NEAREST)
                 
-            # Normalize image
-            img = img.astype(np.float32) / 255.0
+            # BUG 5 FIX: Use MobileNetV2 preprocess_input (expects 0-255 RGB)
+            img = preprocess_input(img.astype(np.float32))
             
-            # One-hot encode mask (4 classes)
+            # BUG 6 FIX: Clip mask before one-hot encoding
+            mask = np.clip(mask.astype(np.uint8), 0, 3)
             mask_one_hot = np.eye(4)[mask.astype(int)]
             
             X.append(img)
@@ -202,7 +202,7 @@ def load_and_preprocess_image(image_path, mask_path, class_id, target_size, num_
     # 3. Label (One-hot encoding)
     label = tf.one_hot(class_id, depth=num_classes)
 
-    return img, {"classification_output": label, "segmentation_output": mask}
+    return img, {"cls_output": label, "seg_output": mask}
 
 def get_data_generators(config):
     """
