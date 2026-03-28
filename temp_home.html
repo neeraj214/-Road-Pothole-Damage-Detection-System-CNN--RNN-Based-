@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>RoadSight Precision | AI Infrastructure Monitoring</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "on-secondary-container": "#663500",
+              "on-tertiary-fixed-variant": "#900a18",
+              "on-tertiary": "#ffffff",
+              "on-secondary-fixed-variant": "#6e3900",
+              "inverse-surface": "#2e3132",
+              "on-error-container": "#93000a",
+              "on-primary": "#ffffff",
+              "error-container": "#ffdad6",
+              "tertiary-container": "#d23f40",
+              "on-error": "#ffffff",
+              "error": "#ba1a1a",
+              "on-primary-fixed-variant": "#004880",
+              "surface-variant": "#e1e3e4",
+              "primary-container": "#1777c9",
+              "on-secondary-fixed": "#2f1500",
+              "surface-tint": "#0060a8",
+              "on-background": "#191c1d",
+              "outline-variant": "#c0c7d3",
+              "primary-fixed-dim": "#a1c9ff",
+              "primary-fixed": "#d2e4ff",
+              "secondary": "#904d00",
+              "on-primary-container": "#fdfcff",
+              "outline": "#717783",
+              "on-secondary": "#ffffff",
+              "tertiary": "#af262a",
+              "inverse-on-surface": "#f0f1f2",
+              "background": "#f8f9fa",
+              "tertiary-fixed": "#ffdad7",
+              "surface-bright": "#f8f9fa",
+              "surface-container-highest": "#e1e3e4",
+              "surface-container-low": "#f3f4f5",
+              "on-surface": "#191c1d",
+              "primary": "#005ea4",
+              "surface-container": "#edeeef",
+              "surface-dim": "#d9dadb",
+              "secondary-container": "#fe932c",
+              "on-tertiary-fixed": "#410004",
+              "tertiary-fixed-dim": "#ffb3ae",
+              "on-primary-fixed": "#001c38",
+              "surface-container-lowest": "#ffffff",
+              "surface": "#f8f9fa",
+              "on-tertiary-container": "#fffbff",
+              "secondary-fixed-dim": "#ffb77d",
+              "inverse-primary": "#a1c9ff",
+              "surface-container-high": "#e7e8e9",
+              "secondary-fixed": "#ffdcc3",
+              "on-surface-variant": "#414751"
+            },
+            fontFamily: {
+              "headline": ["Inter"],
+              "body": ["Inter"],
+              "label": ["Inter"]
+            },
+            borderRadius: {"DEFAULT": "0.25rem", "lg": "1.0rem", "xl": "1.25rem", "full": "9999px"},
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            display: inline-block;
+            vertical-align: middle;
+        }
+        .glass-effect {
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+        }
+    </style>
+</head>
+<body class="bg-background text-on-surface font-body selection:bg-primary-fixed selection:text-on-primary-fixed">
+<!-- TopAppBar -->
+<header class="sticky top-0 w-full z-40 bg-[#f8f9fa] dark:bg-[#191c1d] backdrop-blur-md bg-opacity-90 border-b border-black/5 dark:border-white/5 shadow-[0px_12px_32px_rgba(25,28,29,0.04)]">
+<div class="flex items-center justify-between px-6 h-16 w-full max-w-7xl mx-auto">
+<div class="flex items-center gap-8">
+<span class="text-lg font-bold tracking-tighter text-[#005ea4] dark:text-[#1777c9]">RoadSight Precision</span>
+<nav class="hidden md:flex items-center gap-6 font-Inter antialiased tracking-tight text-sm font-medium">
+<a class="text-[#005ea4] dark:text-[#1777c9] font-semibold" href="#">Home</a>
+<a class="text-[#414751] dark:text-[#e1e3e4] hover:bg-[#f3f4f5] dark:hover:bg-[#414751] transition-colors duration-200 px-3 py-1 rounded-lg" href="#">Dashboard</a>
+<a class="text-[#414751] dark:text-[#e1e3e4] hover:bg-[#f3f4f5] dark:hover:bg-[#414751] transition-colors duration-200 px-3 py-1 rounded-lg" href="#">Analysis</a>
+<a class="text-[#414751] dark:text-[#e1e3e4] hover:bg-[#f3f4f5] dark:hover:bg-[#414751] transition-colors duration-200 px-3 py-1 rounded-lg" href="#">Reports</a>
+</nav>
+</div>
+<div class="flex items-center gap-3">
+<div class="relative hidden sm:block">
+<span class="absolute left-3 top-1/2 -translate-y-1/2 material-symbols-outlined text-outline text-sm">search</span>
+<input class="bg-surface-container-lowest border-none rounded-full pl-10 pr-4 py-1.5 text-sm w-64 focus:ring-2 focus:ring-primary/20 transition-all" placeholder="Search systems..." type="text"/>
+</div>
+<div class="flex items-center gap-1">
+<button class="p-2 rounded-full hover:bg-[#f3f4f5] text-on-surface-variant transition-colors"><span class="material-symbols-outlined" data-icon="api">api</span></button>
+<button class="p-2 rounded-full hover:bg-[#f3f4f5] text-on-surface-variant transition-colors"><span class="material-symbols-outlined" data-icon="notifications">notifications</span></button>
+<button class="p-2 rounded-full hover:bg-[#f3f4f5] text-on-surface-variant transition-colors"><span class="material-symbols-outlined" data-icon="settings">settings</span></button>
+</div>
+<img alt="User Profile Avatar" class="w-8 h-8 rounded-full object-cover ml-2" data-alt="close-up portrait of a professional engineer in an office setting with soft natural window lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD613Q7HChbhKHkOIPM8Ij76vA0s-_1G4SxgEcbgzeDo7xIXLFs2wa9auRjYc-dpdTG2nXbgIrmBXkVh-28lwYCmoq1Z2sN7M-8_hDnJF5mDUAnujc0vLkJWdBsDK44ywjWtB65SK3udEP8ljOF3SUViB73cMyJ9IqCERdmJPQoSAnBTgPsw9sTh4F1XSsUPt5oFzi3tTQtxqT3unjpyleHWggm5ElqVpw7k8nxSS7vYfzJT1XwqIoRDvuiOR3-_ImwNPje1embnnyL"/>
+</div>
+</div>
+</header>
+<main>
+<!-- Hero Section -->
+<section class="relative h-[870px] flex items-center overflow-hidden">
+<div class="absolute inset-0 z-0">
+<img alt="Modern highway" class="w-full h-full object-cover" data-alt="cinematic aerial view of a winding modern highway bridge through a coastal forest at twilight with glowing car lights" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAB_JCLdk6wIOa7rBD_loX1aOb6o9l5lpxAyoQhvcPtvscZRG55UwxIiW4gX-SdY6o0p5eQ4W7bvW05x_OPkfeQ1N_WMQJsFsCDSUt75TUlKWMFdLhREBuaBvBeNBxPDQTegIDwdEvuKJ-fspH-O9W19mfdHJFamWSumi7uwD6E-ssZ7oB-qB48mJHdN90BCb8HexbrdjFy468YH2K8p3LYE0OJ7V9_uRXWYJX36B6QRshTJh4NYels68gFM0V2t3RvMXExQbq0fsHI"/>
+<div class="absolute inset-0 bg-gradient-to-r from-on-surface/90 via-on-surface/40 to-transparent"></div>
+</div>
+<div class="container mx-auto px-6 relative z-10">
+<div class="max-w-3xl">
+<span class="inline-block px-4 py-1.5 bg-primary-container text-on-primary-container rounded-full text-[0.6875rem] font-bold tracking-[0.05em] uppercase mb-6">Infrastructure Intelligence</span>
+<h1 class="text-5xl md:text-7xl font-bold text-white tracking-tighter leading-[0.95] mb-8">
+                        The Future of <br/><span class="text-primary-fixed">Digital Surveying.</span>
+</h1>
+<p class="text-lg md:text-xl text-surface-variant max-w-xl mb-10 leading-relaxed">
+                        Harness the power of high-precision AI to monitor, detect, and prioritize road maintenance with surgical accuracy.
+                    </p>
+<div class="flex flex-wrap gap-4">
+<button class="bg-gradient-to-br from-[#005ea4] to-[#1777c9] text-white px-10 py-4 rounded-full font-semibold shadow-lg hover:opacity-90 transition-all active:scale-[0.98]">
+                            Start Analysis
+                        </button>
+<button class="px-10 py-4 rounded-full font-semibold border border-white/20 text-white backdrop-blur-md hover:bg-white/10 transition-all">
+                            View Reports
+                        </button>
+</div>
+</div>
+</div>
+</section>
+<!-- Value Proposition Bento -->
+<section class="py-24 bg-surface-container-low">
+<div class="container mx-auto px-6">
+<div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+<div class="bg-surface-container-lowest p-10 rounded-lg flex flex-col gap-4 shadow-sm group hover:translate-y-[-4px] transition-transform duration-300">
+<div class="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-white transition-colors">
+<span class="material-symbols-outlined" data-icon="memory">memory</span>
+</div>
+<h3 class="text-xl font-bold tracking-tight text-on-surface">AI-Powered Monitoring</h3>
+<p class="text-on-surface-variant text-sm leading-relaxed">Real-time infrastructure oversight using advanced neural networks to identify subtle decay patterns before they fail.</p>
+</div>
+<div class="bg-surface-container-lowest p-10 rounded-lg flex flex-col gap-4 shadow-sm group hover:translate-y-[-4px] transition-transform duration-300">
+<div class="w-12 h-12 rounded-xl bg-secondary-container/20 flex items-center justify-center text-on-secondary-container group-hover:bg-secondary-container group-hover:text-white transition-colors">
+<span class="material-symbols-outlined" data-icon="gps_fixed">gps_fixed</span>
+</div>
+<h3 class="text-xl font-bold tracking-tight text-on-surface">Precision Detection</h3>
+<p class="text-on-surface-variant text-sm leading-relaxed">Sub-millimeter accuracy in identifying potholes, surface cracks, and structural anomalies across thousands of miles.</p>
+</div>
+<div class="bg-surface-container-lowest p-10 rounded-lg flex flex-col gap-4 shadow-sm group hover:translate-y-[-4px] transition-transform duration-300">
+<div class="w-12 h-12 rounded-xl bg-tertiary-container/10 flex items-center justify-center text-tertiary group-hover:bg-tertiary-container group-hover:text-white transition-colors">
+<span class="material-symbols-outlined" data-icon="priority_high">priority_high</span>
+</div>
+<h3 class="text-xl font-bold tracking-tight text-on-surface">Repair Priority</h3>
+<p class="text-on-surface-variant text-sm leading-relaxed">Automated scoring system that factors in traffic volume and hazard severity to optimize your maintenance budget.</p>
+</div>
+</div>
+</div>
+</section>
+<!-- Statistics Row -->
+<section class="py-20 bg-primary">
+<div class="container mx-auto px-6">
+<div class="grid grid-cols-1 md:grid-cols-3 gap-12 text-center">
+<div class="flex flex-col gap-2">
+<span class="text-primary-fixed text-6xl font-black tracking-tighter">12.8k</span>
+<span class="text-on-primary/80 uppercase tracking-widest text-[0.6875rem] font-bold">Roads Scanned</span>
+</div>
+<div class="flex flex-col gap-2">
+<span class="text-primary-fixed text-6xl font-black tracking-tighter">98.4%</span>
+<span class="text-on-primary/80 uppercase tracking-widest text-[0.6875rem] font-bold">Detection Accuracy</span>
+</div>
+<div class="flex flex-col gap-2">
+<span class="text-primary-fixed text-6xl font-black tracking-tighter">2.4s</span>
+<span class="text-on-primary/80 uppercase tracking-widest text-[0.6875rem] font-bold">Processing Time</span>
+</div>
+</div>
+</div>
+</section>
+<!-- Features Detail Section -->
+<section class="py-32 bg-surface overflow-hidden">
+<div class="container mx-auto px-6">
+<div class="flex flex-col lg:flex-row items-center gap-20">
+<div class="flex-1 space-y-12">
+<div>
+<span class="text-primary font-bold tracking-widest text-[0.6875rem] uppercase">Technical Specs</span>
+<h2 class="text-4xl font-bold tracking-tighter text-on-surface mt-4 mb-6 leading-tight">Sophisticated Detection <br/>Simplified Execution</h2>
+</div>
+<div class="space-y-8">
+<div class="flex gap-6">
+<div class="shrink-0 w-14 h-14 bg-surface-container-highest rounded-full flex items-center justify-center">
+<span class="material-symbols-outlined text-primary" data-icon="visibility">visibility</span>
+</div>
+<div>
+<h4 class="text-lg font-bold text-on-surface mb-2">Computer Vision</h4>
+<p class="text-on-surface-variant text-sm max-w-md">Proprietary LiDAR and camera fusion models trained on over 50 million road anomalies globally.</p>
+</div>
+</div>
+<div class="flex gap-6">
+<div class="shrink-0 w-14 h-14 bg-surface-container-highest rounded-full flex items-center justify-center">
+<span class="material-symbols-outlined text-primary" data-icon="assessment">assessment</span>
+</div>
+<div>
+<h4 class="text-lg font-bold text-on-surface mb-2">Automated Priority Scoring</h4>
+<p class="text-on-surface-variant text-sm max-w-md">Dynamic algorithms calculate the Cost-to-Repair vs. Risk-to-Public metrics in real-time.</p>
+</div>
+</div>
+<div class="flex gap-6">
+<div class="shrink-0 w-14 h-14 bg-surface-container-highest rounded-full flex items-center justify-center">
+<span class="material-symbols-outlined text-primary" data-icon="cloud_sync">cloud_sync</span>
+</div>
+<div>
+<h4 class="text-lg font-bold text-on-surface mb-2">Cloud Reporting</h4>
+<p class="text-on-surface-variant text-sm max-w-md">Seamlessly push data to municipal stakeholders with interactive, geo-tagged PDF and JSON reports.</p>
+</div>
+</div>
+</div>
+</div>
+<div class="flex-1 relative">
+<div class="absolute -top-10 -left-10 w-64 h-64 bg-primary/5 rounded-full blur-3xl"></div>
+<div class="absolute -bottom-10 -right-10 w-64 h-64 bg-secondary-container/5 rounded-full blur-3xl"></div>
+<div class="relative bg-surface-container-highest p-4 rounded-xl shadow-2xl overflow-hidden">
+<img alt="System Interface" class="rounded-lg w-full aspect-[4/3] object-cover" data-alt="close-up of a high-resolution professional tablet screen displaying complex digital topographic maps and data visualizations" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBQFJNXU0Ts3YwZ_qT654th9riVTZIuN-Caa0hPNVTjOKRZepMrR0Jw6JAGwXdoxJS1hHonIFZgdCBShv40or8JurGYnLEsf234sE8NwXKJLgN62IZV5gFSCEQVoxH5WCffPXAzMF2HQ516pvMI6g2q7ZhzfQzuYW6N0z-dFZYitLR3Js3YmTgWfCkCJ6ybilCjE2qzXR2HF3AMgL87PR5SUhAfW_KtDyG7sUge0lScyx5JWEKm1E08Ty4yGNDkW5aCDBzeOTWZGN7c"/>
+<!-- Floating Hazard Chip -->
+<div class="absolute top-10 right-10 bg-tertiary-container text-on-tertiary-container px-4 py-2 rounded-full flex items-center gap-2 shadow-lg glass-effect">
+<span class="w-2 h-2 bg-white rounded-full"></span>
+<span class="text-[0.6875rem] font-bold uppercase tracking-wider">Critical Hazard Detected</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- CTA Section -->
+<section class="py-24">
+<div class="container mx-auto px-6">
+<div class="bg-on-surface rounded-xl p-12 md:p-20 text-center relative overflow-hidden">
+<div class="absolute inset-0 opacity-10">
+<img alt="Texture" class="w-full h-full object-cover" data-alt="abstract dark grey concrete texture with dramatic top lighting and deep shadows" src="https://lh3.googleusercontent.com/aida-public/AB6AXuB67U8nk7Q4nRnfQiqi0T-U7rHSzSaFuB6UABVN7xBZLmeDCwjUw4ebsxU7b8j-LvBcHsK3ylwtlxk1m-fvLtcnC8HqUqnLU8BJ-JwD-clHa5uAvCKy7QABBAAKLclTSl3ED1_Z2KqzmCHrKBX5Xg162cshGnb_B02TXcgBY2NMFUA6PY1tBoObGX5y4NQ1nnGc02uj_4Tijk4ofB1jN2aMHq_X2uiNzx3mBS5I2Evs82sVk8_a2tKQOfJ8ykEsP1edzGnu61aHvQNq"/>
+</div>
+<div class="relative z-10 max-w-2xl mx-auto">
+<h2 class="text-4xl md:text-5xl font-bold text-white tracking-tighter mb-8 leading-tight">Ready to modernize your infrastructure?</h2>
+<div class="flex flex-wrap justify-center gap-4">
+<button class="bg-primary text-white px-10 py-4 rounded-full font-semibold hover:bg-primary-container transition-colors shadow-lg">Get Started Free</button>
+<button class="bg-white/10 text-white px-10 py-4 rounded-full font-semibold border border-white/20 backdrop-blur-sm hover:bg-white/20 transition-colors">Talk to Sales</button>
+</div>
+</div>
+</div>
+</div>
+</section>
+</main>
+<footer class="bg-surface-container-low py-16">
+<div class="container mx-auto px-6">
+<div class="grid grid-cols-1 md:grid-cols-4 gap-12 mb-16">
+<div class="col-span-1 md:col-span-1">
+<span class="text-lg font-bold tracking-tighter text-primary">RoadSight Precision</span>
+<p class="text-on-surface-variant text-sm mt-4 leading-relaxed">Defining the next generation of civil engineering through artificial intelligence and precision surveying.</p>
+</div>
+<div>
+<h5 class="font-bold text-on-surface mb-6 uppercase text-[0.6875rem] tracking-[0.05em]">Product</h5>
+<ul class="space-y-4 text-sm text-on-surface-variant">
+<li><a class="hover:text-primary transition-colors" href="#">Features</a></li>
+<li><a class="hover:text-primary transition-colors" href="#">Integration</a></li>
+<li><a class="hover:text-primary transition-colors" href="#">Case Studies</a></li>
+<li><a class="hover:text-primary transition-colors" href="#">Pricing</a></li>
+</ul>
+</div>
+<div>
+<h5 class="font-bold text-on-surface mb-6 uppercase text-[0.6875rem] tracking-[0.05em]">Company</h5>
+<ul class="space-y-4 text-sm text-on-surface-variant">
+<li><a class="hover:text-primary transition-colors" href="#">About Us</a></li>
+<li><a class="hover:text-primary transition-colors" href="#">Engineering</a></li>
+<li><a class="hover:text-primary transition-colors" href="#">Careers</a></li>
+<li><a class="hover:text-primary transition-colors" href="#">Contact</a></li>
+</ul>
+</div>
+<div>
+<h5 class="font-bold text-on-surface mb-6 uppercase text-[0.6875rem] tracking-[0.05em]">Legal</h5>
+<ul class="space-y-4 text-sm text-on-surface-variant">
+<li><a class="hover:text-primary transition-colors" href="#">Privacy Policy</a></li>
+<li><a class="hover:text-primary transition-colors" href="#">Terms of Service</a></li>
+<li><a class="hover:text-primary transition-colors" href="#">Cookie Policy</a></li>
+</ul>
+</div>
+</div>
+<div class="pt-8 border-t border-outline-variant/30 flex flex-col md:flex-row justify-between items-center gap-4">
+<p class="text-[0.6875rem] text-on-surface-variant font-medium tracking-wide">© 2024 ROADSIGHT PRECISION. ALL RIGHTS RESERVED.</p>
+<div class="flex gap-6">
+<a class="text-on-surface-variant hover:text-primary transition-colors" href="#"><span class="material-symbols-outlined text-lg" data-icon="share">share</span></a>
+<a class="text-on-surface-variant hover:text-primary transition-colors" href="#"><span class="material-symbols-outlined text-lg" data-icon="language">language</span></a>
+</div>
+</div>
+</div>
+</footer>
+</body></html>
