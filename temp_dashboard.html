@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>RoadSight Precision | Infrastructure AI</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "surface": "#f8f9fa",
+              "primary": "#005ea4",
+              "secondary": "#639922",
+              "tertiary": "#d23f40",
+              "pothole-red": "#e57373",
+              "normal-green": "#10b981",
+              "surface-container": "#f3f4f5",
+              "surface-container-low": "#f8f9fa",
+              "surface-container-lowest": "#ffffff",
+              "outline-variant": "#e1e3e4",
+              "on-surface": "#191c1d",
+              "on-surface-variant": "#414751"
+            },
+            fontFamily: {
+              "headline": ["Inter", "sans-serif"],
+              "body": ["Inter", "sans-serif"],
+              "label": ["Inter", "sans-serif"]
+            },
+            borderRadius: {
+              "DEFAULT": "0.5rem",
+              "lg": "0.5rem",
+              "xl": "0.75rem",
+              "full": "9999px"
+            },
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            vertical-align: middle;
+        }
+        .thin-border { border: 1px solid rgba(0,0,0,0.05); }
+        .digital-grid {
+            background-image: radial-gradient(circle, #e1e3e4 1px, transparent 1px);
+            background-size: 24px 24px;
+        }
+    </style>
+</head>
+<body class="bg-surface font-body text-on-surface antialiased digital-grid">
+<!-- SideNavBar Component -->
+<aside class="h-screen w-64 fixed left-0 top-0 z-50 bg-[#f3f4f5] dark:bg-[#191c1d] flex flex-col py-6">
+<div class="px-6 mb-8">
+<h1 class="text-[#191c1d] dark:text-[#f8f9fa] font-black uppercase text-[0.6875rem] tracking-[0.05em]">Modern Precision</h1>
+<p class="text-[10px] text-zinc-500 font-medium">Digital Surveyor v2.1</p>
+</div>
+<nav class="flex flex-col space-y-1">
+<a class="bg-gradient-to-br from-[#005ea4] to-[#1777c9] text-white rounded-lg mx-3 px-4 py-3 shadow-sm flex items-center gap-3 font-medium text-[0.875rem]" href="#">
+<span class="material-symbols-outlined text-[20px]">dashboard</span>
+            Dashboard
+        </a>
+<a class="text-[#414751] dark:text-[#e1e3e4] hover:bg-[#e1e3e4] dark:hover:bg-[#414751] rounded-lg mx-3 px-4 py-3 transition-all flex items-center gap-3 hover:translate-x-1 duration-200 text-[0.875rem]" href="#">
+<span class="material-symbols-outlined text-[20px]">home</span>
+            Home
+        </a>
+<a class="text-[#414751] dark:text-[#e1e3e4] hover:bg-[#e1e3e4] dark:hover:bg-[#414751] rounded-lg mx-3 px-4 py-3 transition-all flex items-center gap-3 hover:translate-x-1 duration-200 text-[0.875rem]" href="#">
+<span class="material-symbols-outlined text-[20px]">analytics</span>
+            Analysis
+        </a>
+<a class="text-[#414751] dark:text-[#e1e3e4] hover:bg-[#e1e3e4] dark:hover:bg-[#414751] rounded-lg mx-3 px-4 py-3 transition-all flex items-center gap-3 hover:translate-x-1 duration-200 text-[0.875rem]" href="#">
+<span class="material-symbols-outlined text-[20px]">history</span>
+            History
+        </a>
+<a class="text-[#414751] dark:text-[#e1e3e4] hover:bg-[#e1e3e4] dark:hover:bg-[#414751] rounded-lg mx-3 px-4 py-3 transition-all flex items-center gap-3 hover:translate-x-1 duration-200 text-[0.875rem]" href="#">
+<span class="material-symbols-outlined text-[20px]">description</span>
+            Reports
+        </a>
+</nav>
+<div class="mt-auto pt-6 border-t border-black/5 mx-3 space-y-1">
+<a class="text-[#414751] dark:text-[#e1e3e4] hover:bg-[#e1e3e4] dark:hover:bg-[#414751] rounded-lg px-4 py-2 transition-all flex items-center gap-3 text-[0.875rem]" href="#">
+<span class="material-symbols-outlined text-[18px]">help</span>
+            Support
+        </a>
+<div class="flex items-center gap-3 px-4 py-4 mt-2">
+<div class="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary font-bold text-xs">JD</div>
+<div class="overflow-hidden">
+<p class="text-[12px] font-bold truncate">John Doe</p>
+<p class="text-[10px] text-zinc-500 truncate">Admin Access</p>
+</div>
+</div>
+</div>
+</aside>
+<!-- Main Content Area -->
+<main class="ml-64 min-h-screen flex flex-col">
+<!-- TopAppBar Component -->
+<header class="sticky top-0 w-full z-40 bg-[#f8f9fa] dark:bg-[#191c1d] backdrop-blur-md bg-opacity-90 border-b border-black/5 dark:border-white/5 shadow-[0px_12px_32px_rgba(25,28,29,0.04)] h-16 flex items-center justify-between px-8">
+<div class="flex items-center gap-4">
+<span class="font-Inter antialiased tracking-tight text-sm font-medium text-[#414751]">Dashboard / Overview</span>
+</div>
+<div class="flex items-center gap-6">
+<span class="text-[11px] font-bold text-normal-green flex items-center gap-1.5 px-3 py-1 bg-normal-green/5 rounded-full border border-normal-green/10">
+<span class="w-1.5 h-1.5 rounded-full bg-normal-green"></span>
+                API Status: Healthy
+            </span>
+<div class="flex items-center gap-2">
+<button class="w-10 h-10 flex items-center justify-center rounded-lg hover:bg-[#f3f4f5] transition-colors material-symbols-outlined text-zinc-500">api</button>
+<button class="w-10 h-10 flex items-center justify-center rounded-lg hover:bg-[#f3f4f5] transition-colors material-symbols-outlined text-zinc-500">notifications</button>
+<button class="w-10 h-10 flex items-center justify-center rounded-lg hover:bg-[#f3f4f5] transition-colors material-symbols-outlined text-zinc-500">settings</button>
+</div>
+</div>
+</header>
+<!-- Canvas -->
+<div class="p-8 max-w-7xl mx-auto w-full space-y-8">
+<!-- Metric Cards Row -->
+<section class="grid grid-cols-1 md:grid-cols-4 gap-6">
+<!-- Total Scanned -->
+<div class="bg-surface-container-lowest thin-border rounded-xl p-6 flex flex-col justify-between shadow-sm">
+<div class="flex justify-between items-start mb-6">
+<span class="text-[11px] font-black text-zinc-400 tracking-widest uppercase">Total Scanned</span>
+<span class="material-symbols-outlined text-primary/40 text-xl">analytics</span>
+</div>
+<div>
+<h2 class="text-4xl font-black tracking-tighter text-on-surface">1,284</h2>
+<p class="text-[12px] font-bold text-normal-green mt-1">+12% from last week</p>
+</div>
+</div>
+<!-- Potholes Found -->
+<div class="bg-surface-container-lowest thin-border rounded-xl p-6 flex flex-col justify-between shadow-sm border-l-[6px] border-l-pothole-red">
+<div class="flex justify-between items-start mb-6">
+<span class="text-[11px] font-black text-zinc-400 tracking-widest uppercase">Potholes Found</span>
+<span class="material-symbols-outlined text-pothole-red text-xl">report_problem</span>
+</div>
+<div>
+<h2 class="text-4xl font-black tracking-tighter text-on-surface">42</h2>
+<p class="text-[12px] font-bold text-pothole-red mt-1">High Priority Action</p>
+</div>
+</div>
+<!-- Cracks Found -->
+<div class="bg-surface-container-lowest thin-border rounded-xl p-6 flex flex-col justify-between shadow-sm border-l-[6px] border-l-amber-500">
+<div class="flex justify-between items-start mb-6">
+<span class="text-[11px] font-black text-zinc-400 tracking-widest uppercase">Cracks Found</span>
+<span class="material-symbols-outlined text-amber-500 text-xl">construction</span>
+</div>
+<div>
+<h2 class="text-4xl font-black tracking-tighter text-on-surface">156</h2>
+<p class="text-[12px] font-bold text-amber-600 mt-1">Needs Field Review</p>
+</div>
+</div>
+<!-- Normal Roads -->
+<div class="bg-surface-container-lowest thin-border rounded-xl p-6 flex flex-col justify-between shadow-sm border-l-[6px] border-l-normal-green">
+<div class="flex justify-between items-start mb-6">
+<span class="text-[11px] font-black text-zinc-400 tracking-widest uppercase">Normal Roads</span>
+<span class="material-symbols-outlined text-normal-green text-xl">verified</span>
+</div>
+<div>
+<h2 class="text-4xl font-black tracking-tighter text-on-surface">1,086</h2>
+<p class="text-[12px] font-bold text-normal-green mt-1">Structurally Stable</p>
+</div>
+</div>
+</section>
+<!-- Main Analysis Grid -->
+<section class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+<!-- Left: Upload & Preview -->
+<div class="bg-surface-container-lowest thin-border rounded-xl p-8 flex flex-col gap-8 shadow-sm">
+<div class="flex items-center justify-between">
+<h3 class="text-[11px] font-black text-zinc-900 uppercase tracking-[0.1em]">Ingestion Engine</h3>
+<button class="text-xs font-bold text-primary hover:opacity-80 flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">info</span>
+                        Guidelines
+                    </button>
+</div>
+<div class="flex-1 flex flex-col gap-8">
+<!-- Drag & Drop Zone -->
+<div class="border-2 border-dashed border-outline-variant rounded-lg p-10 flex flex-col items-center justify-center gap-4 bg-surface hover:border-primary/40 transition-all cursor-pointer group">
+<div class="w-14 h-14 rounded-lg bg-primary/5 flex items-center justify-center group-hover:bg-primary group-hover:text-white transition-all">
+<span class="material-symbols-outlined text-2xl">upload_file</span>
+</div>
+<div class="text-center">
+<p class="text-sm font-bold">Deploy new survey data or <span class="text-primary">browse</span></p>
+<p class="text-[11px] text-zinc-500 mt-1 font-medium tracking-wide">RAW, JPG, PNG up to 50MB</p>
+</div>
+</div>
+<!-- Last Result Thumbnail -->
+<div class="flex flex-col gap-4">
+<span class="text-[10px] font-black text-zinc-400 uppercase tracking-widest flex items-center gap-2">
+<span class="w-1 h-1 bg-zinc-300 rounded-full"></span>
+                            Latest Inspection Frame
+                        </span>
+<div class="relative rounded-lg overflow-hidden h-48 group shadow-inner">
+<img alt="Road Analysis Preview" class="w-full h-full object-cover grayscale-[20%] group-hover:grayscale-0 transition-all duration-700" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDykgJBiaSzF24-uv7z9mK58d2EV2OMlKy95y5gLA80P5sjNwTg7xlT7NrLkx4NlFulFwj0LF8uXo2cdvPMDcoQCnZjWeYYqq6ySOddCau7R8GYosYciit2V797hTwEq5hGmYt9IB1s4dI-njhdAZrzHesD12plzibUDd0XGd3Vx38dQwzLbHuZCdByM4tsJje4-fE29DfbiFDfQIRqNGdWMc_DarmDvVQspszxq5mtcaYlqJPn5u4Pip21aCmF_f28in8UWQ-MuM5W"/>
+<div class="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent flex flex-col justify-end p-6">
+<div class="flex items-center justify-between text-white">
+<div class="flex flex-col">
+<p class="text-[10px] font-bold opacity-70 uppercase tracking-widest">Metadata</p>
+<p class="text-xs font-bold tracking-tight">IMG_8422_POTHOLE.jpg</p>
+</div>
+<span class="text-[10px] bg-pothole-red px-3 py-1 rounded-full font-black tracking-widest shadow-lg">TARGET IDENTIFIED</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Right: Detection Result Detail -->
+<div class="bg-surface-container-lowest thin-border rounded-xl p-8 flex flex-col gap-8 shadow-sm">
+<div class="flex items-start justify-between">
+<div>
+<h3 class="text-[11px] font-black text-zinc-900 uppercase tracking-[0.1em]">Inference Analytics</h3>
+<p class="text-[11px] text-zinc-500 font-medium">Model precision latency: 1.2s</p>
+</div>
+<span class="bg-pothole-red text-white px-4 py-1.5 rounded-lg text-[10px] font-black tracking-widest flex items-center gap-2 shadow-sm">
+<span class="w-2 h-2 rounded-full bg-white animate-pulse"></span>
+                        POTHOLE DETECTED
+                    </span>
+</div>
+<!-- Prediction Metadata -->
+<div class="grid grid-cols-2 gap-4">
+<div class="bg-[#fdf3f3] p-5 rounded-lg border border-pothole-red/10">
+<p class="text-[10px] font-black text-pothole-red/70 uppercase mb-3 tracking-widest">Severity Index</p>
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-pothole-red" style="font-variation-settings: 'FILL' 1;">priority_high</span>
+<span class="text-xl font-black text-pothole-red tracking-tight">CRITICAL</span>
+</div>
+</div>
+<div class="bg-surface-container-low p-5 rounded-lg border border-black/5">
+<p class="text-[10px] font-black text-zinc-400 uppercase mb-3 tracking-widest">Repair Priority</p>
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-zinc-900">precision_manufacturing</span>
+<span class="text-xl font-black text-zinc-900 tracking-tight">92 / 100</span>
+</div>
+</div>
+</div>
+<!-- Confidence Bars -->
+<div class="space-y-5">
+<p class="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Classification Confidence</p>
+<div class="space-y-4">
+<div class="space-y-1.5">
+<div class="flex justify-between text-[11px] font-bold">
+<span class="text-on-surface">Pothole Matrix</span>
+<span class="text-pothole-red">98.4%</span>
+</div>
+<div class="h-2 w-full bg-surface-container rounded-full overflow-hidden">
+<div class="h-full bg-pothole-red rounded-full" style="width: 98.4%"></div>
+</div>
+</div>
+<div class="space-y-1.5 opacity-60">
+<div class="flex justify-between text-[11px] font-bold">
+<span class="text-on-surface">Structural Crack</span>
+<span>1.2%</span>
+</div>
+<div class="h-2 w-full bg-surface-container rounded-full overflow-hidden">
+<div class="h-full bg-amber-500 rounded-full" style="width: 1.2%"></div>
+</div>
+</div>
+<div class="space-y-1.5 opacity-40">
+<div class="flex justify-between text-[11px] font-bold">
+<span class="text-on-surface">Baseline Road</span>
+<span>0.4%</span>
+</div>
+<div class="h-2 w-full bg-surface-container rounded-full overflow-hidden">
+<div class="h-full bg-normal-green rounded-full" style="width: 0.4%"></div>
+</div>
+</div>
+</div>
+</div>
+<!-- Asymmetric Details -->
+<div class="flex gap-6 mt-2 pt-6 border-t border-black/5">
+<!-- Damage Coverage Heatmap -->
+<div class="w-1/3">
+<p class="text-[10px] font-black text-zinc-400 uppercase mb-4 tracking-widest">Spatial Density</p>
+<div class="grid grid-cols-2 gap-1.5 h-20">
+<div class="bg-pothole-red/20 rounded-sm"></div>
+<div class="bg-pothole-red/90 rounded-sm"></div>
+<div class="bg-zinc-100 rounded-sm"></div>
+<div class="bg-pothole-red/40 rounded-sm"></div>
+</div>
+</div>
+<!-- Recommendation Box -->
+<div class="flex-1 bg-surface-container-low p-5 border-l-4 border-pothole-red rounded-r-lg shadow-sm">
+<p class="text-[11px] font-black text-zinc-900 mb-2 tracking-tight">AI Recommendation</p>
+<p class="text-[11px] leading-relaxed text-zinc-600 italic font-medium">"Immediate asphalt patching required. Damage exceeds 15cm depth. High risk of vehicle tire failure on this segment."</p>
+</div>
+</div>
+</div>
+</section>
+<!-- Recent Scans List -->
+<section class="bg-surface-container-lowest thin-border rounded-xl overflow-hidden shadow-sm">
+<div class="px-8 py-6 border-b border-black/5 flex items-center justify-between bg-white">
+<h3 class="text-[11px] font-black text-zinc-900 uppercase tracking-[0.1em]">Global Scan Registry</h3>
+<div class="flex items-center gap-3">
+<button class="px-4 py-2 text-[11px] font-black text-zinc-500 hover:text-zinc-900 transition-colors border border-zinc-200 rounded-lg uppercase tracking-widest">Export Dataset</button>
+<button class="px-4 py-2 text-[11px] font-black bg-primary text-white rounded-lg hover:opacity-90 transition-all uppercase tracking-widest shadow-sm">Audit Report</button>
+</div>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="bg-surface-container-low border-b border-black/5">
+<th class="px-8 py-5 text-[10px] font-black text-zinc-400 uppercase tracking-[0.15em]">Status</th>
+<th class="px-8 py-5 text-[10px] font-black text-zinc-400 uppercase tracking-[0.15em]">Entity ID</th>
+<th class="px-8 py-5 text-[10px] font-black text-zinc-400 uppercase tracking-[0.15em]">Temporal Signature</th>
+<th class="px-8 py-5 text-[10px] font-black text-zinc-400 uppercase tracking-[0.15em]">Inference Result</th>
+<th class="px-8 py-5 text-[10px] font-black text-zinc-400 uppercase tracking-[0.15em]">Confidence</th>
+<th class="px-8 py-5 text-[10px] font-black text-zinc-400 uppercase tracking-[0.15em] text-right">Ops</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-black/5">
+<!-- Row 1 -->
+<tr class="hover:bg-surface-container-low/50 transition-colors group">
+<td class="px-8 py-5">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-pothole-red"></span>
+<span class="text-[11px] font-bold text-pothole-red uppercase tracking-wide">Critical</span>
+</div>
+</td>
+<td class="px-8 py-5 text-[13px] font-bold text-zinc-900">IMG_8422_POTHOLE.jpg</td>
+<td class="px-8 py-5 text-[11px] text-zinc-500 font-mono">2023-10-24 14:22:05</td>
+<td class="px-8 py-5">
+<span class="bg-[#fdf3f3] text-pothole-red px-2.5 py-1 rounded-lg text-[10px] font-black border border-pothole-red/20 uppercase tracking-widest">Pothole</span>
+</td>
+<td class="px-8 py-5">
+<div class="flex items-center gap-3">
+<div class="w-20 h-1.5 bg-zinc-100 rounded-full overflow-hidden">
+<div class="h-full bg-pothole-red" style="width: 98%"></div>
+</div>
+<span class="text-[11px] font-mono font-bold text-zinc-600">98%</span>
+</div>
+</td>
+<td class="px-8 py-5 text-right">
+<button class="w-8 h-8 flex items-center justify-center rounded-lg material-symbols-outlined text-zinc-400 group-hover:bg-primary group-hover:text-white transition-all text-[18px]">visibility</button>
+</td>
+</tr>
+<!-- Row 2 -->
+<tr class="hover:bg-surface-container-low/50 transition-colors group">
+<td class="px-8 py-5">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-amber-500"></span>
+<span class="text-[11px] font-bold text-amber-600 uppercase tracking-wide">Warning</span>
+</div>
+</td>
+<td class="px-8 py-5 text-[13px] font-bold text-zinc-900">IMG_8421_CRACK.jpg</td>
+<td class="px-8 py-5 text-[11px] text-zinc-500 font-mono">2023-10-24 14:15:32</td>
+<td class="px-8 py-5">
+<span class="bg-amber-50 text-amber-700 px-2.5 py-1 rounded-lg text-[10px] font-black border border-amber-200 uppercase tracking-widest">Crack</span>
+</td>
+<td class="px-8 py-5">
+<div class="flex items-center gap-3">
+<div class="w-20 h-1.5 bg-zinc-100 rounded-full overflow-hidden">
+<div class="h-full bg-amber-500" style="width: 74%"></div>
+</div>
+<span class="text-[11px] font-mono font-bold text-zinc-600">74%</span>
+</div>
+</td>
+<td class="px-8 py-5 text-right">
+<button class="w-8 h-8 flex items-center justify-center rounded-lg material-symbols-outlined text-zinc-400 group-hover:bg-primary group-hover:text-white transition-all text-[18px]">visibility</button>
+</td>
+</tr>
+<!-- Row 3 -->
+<tr class="hover:bg-surface-container-low/50 transition-colors group">
+<td class="px-8 py-5">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-normal-green"></span>
+<span class="text-[11px] font-bold text-normal-green uppercase tracking-wide">Clear</span>
+</div>
+</td>
+<td class="px-8 py-5 text-[13px] font-bold text-zinc-900">IMG_8420_NORMAL.jpg</td>
+<td class="px-8 py-5 text-[11px] text-zinc-500 font-mono">2023-10-24 14:02:11</td>
+<td class="px-8 py-5">
+<span class="bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-lg text-[10px] font-black border border-emerald-200 uppercase tracking-widest">Normal</span>
+</td>
+<td class="px-8 py-5">
+<div class="flex items-center gap-3">
+<div class="w-20 h-1.5 bg-zinc-100 rounded-full overflow-hidden">
+<div class="h-full bg-normal-green" style="width: 99%"></div>
+</div>
+<span class="text-[11px] font-mono font-bold text-zinc-600">99%</span>
+</div>
+</td>
+<td class="px-8 py-5 text-right">
+<button class="w-8 h-8 flex items-center justify-center rounded-lg material-symbols-outlined text-zinc-400 group-hover:bg-primary group-hover:text-white transition-all text-[18px]">visibility</button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+</div>
+<!-- Footer Info -->
+<footer class="mt-auto p-12 text-center">
+<div class="inline-flex items-center gap-4 bg-zinc-900/5 px-6 py-2 rounded-full">
+<p class="text-[9px] text-zinc-400 font-black uppercase tracking-[0.2em]">Engineered for Public Works Infrastructure</p>
+<span class="w-1 h-1 bg-zinc-300 rounded-full"></span>
+<p class="text-[9px] text-zinc-400 font-black uppercase tracking-[0.2em]">v2.4.0 High Precision Neural Network</p>
+</div>
+</footer>
+</main>
+</body></html>
