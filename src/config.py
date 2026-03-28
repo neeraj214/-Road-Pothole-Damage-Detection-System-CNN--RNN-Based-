@@ -12,10 +12,11 @@ MODELS_DIR = os.path.join(BASE_DIR, "models")
 RESULTS_DIR = os.path.join(BASE_DIR, "results")
 
 # Model Configuration
-MODEL_NAME = "pothole_detector_mobilenetv2_v3"
-MODEL_FILENAME = "best_model_dual_v3.keras"
-INPUT_SHAPE = (256, 256, 3) # Increased from 224 for better detail
-BATCH_SIZE = 16 # Optimized for RTX 2050 4GB VRAM at 256x256
+MODEL_NAME = "pothole_detector_mobilenetv2_v4"
+MODEL_FILENAME = "best_model_dual_v4.keras"
+INPUT_SHAPE = (160, 160, 3) # Reduced from 256 for RTX 2050 4GB OOM fix
+BATCH_SIZE = 8 # Reduced from 16 to fit in memory
+ACCUMULATION_STEPS = 2 # Simulate effective batch size of 16
 EPOCHS = 30
 LEARNING_RATE = 0.001
 

@@ -28,14 +28,13 @@ def get_augmentations(img_size=224):
     ], additional_targets={'mask': 'mask'}, is_check_shapes=False)
 
 class PotholeDataGenerator(tf.keras.utils.Sequence):
-    def __init__(self, img_paths, cls_labels, mask_dir, batch_size=16, augment=False, img_size=224, class_weights=None):
+    def __init__(self, img_paths, cls_labels, mask_dir, batch_size=16, augment=False, img_size=224):
         self.img_paths = img_paths
         self.cls_labels = cls_labels
         self.mask_dir = Path(mask_dir)
         self.batch_size = batch_size
         self.augment = augment
         self.img_size = img_size
-        self.class_weights = class_weights
         self.aug_pipeline = get_augmentations(img_size) if augment else A.Resize(img_size, img_size)
         self.indices = np.arange(len(self.img_paths))
         self.on_epoch_end()
@@ -72,8 +71,6 @@ class PotholeDataGenerator(tf.keras.utils.Sequence):
         X = []
         Y_cls = []
         Y_seg = []
-        W_cls = []
-        W_seg = []
         
         for i in batch_indices:
             img_path = self.img_paths[i]
@@ -86,11 +83,6 @@ class PotholeDataGenerator(tf.keras.utils.Sequence):
             
             # Load and resize mask (already uses INTER_NEAREST)
             mask = self._load_mask(img_path)
-            
-            # Debug Safety Check
-            if img.shape[:2] != mask.shape[:2]:
-                logger.error(f"Shape mismatch: Img {img.shape[:2]} Mask {mask.shape[:2]}")
-                continue
             
             # Apply Albumentations
             if self.augment:
@@ -115,24 +107,12 @@ class PotholeDataGenerator(tf.keras.utils.Sequence):
             Y_cls.append(cls_label)
             Y_seg.append(mask_one_hot)
             
-            # --- Sample Weighting for Multi-Output ---
-            # Classification weight: Use computed class weight for this specific image
-            if self.class_weights:
-                class_idx = np.argmax(cls_label)
-                W_cls.append(self.class_weights[class_idx])
-            else:
-                W_cls.append(1.0)
-            
-            # Segmentation weight: Uniform weighting (1.0 for all pixels)
-            W_seg.append(1.0)
-            
         return np.array(X), \
-               {"cls_output": np.array(Y_cls), "seg_output": np.array(Y_seg)}, \
-               {"cls_output": np.array(W_cls), "seg_output": np.array(W_seg)}
+               {"cls_output": np.array(Y_cls), "seg_output": np.array(Y_seg)}
 
-def build_generators(data_dir, mask_dir, batch_size=16, val_split=0.2, img_size=224, class_weights=None):
+def build_generators(data_dir, mask_dir, batch_size=8, val_split=0.2, img_size=160):
     """
-    Improved recursive scanner with advanced class detection and weight support.
+    Improved recursive scanner that returns tf.data.Dataset for OOM efficiency.
     """
     img_paths = []
     cls_labels = []
@@ -152,8 +132,8 @@ def build_generators(data_dir, mask_dir, batch_size=16, val_split=0.2, img_size=
                 else: label_idx = 0
                 
                 img_paths.append(img_path)
-                label = np.zeros(3)
-                label[label_idx] = 1
+                label = np.zeros(3, dtype=np.float32)
+                label[label_idx] = 1.0
                 cls_labels.append(label)
 
     if not img_paths:
@@ -170,10 +150,37 @@ def build_generators(data_dir, mask_dir, batch_size=16, val_split=0.2, img_size=
         random_state=42
     )
     
-    train_gen = PotholeDataGenerator(train_imgs, train_labels, mask_dir, batch_size=batch_size, augment=True, img_size=img_size, class_weights=class_weights)
-    val_gen = PotholeDataGenerator(val_imgs, val_labels, mask_dir, batch_size=batch_size, augment=False, img_size=img_size, class_weights=class_weights)
+    # Create PotholeDataGenerator instances
+    train_gen = PotholeDataGenerator(train_imgs, train_labels, mask_dir, batch_size=batch_size, augment=True, img_size=img_size)
+    val_gen = PotholeDataGenerator(val_imgs, val_labels, mask_dir, batch_size=batch_size, augment=False, img_size=img_size)
     
-    return train_gen, val_gen
+    # Convert to tf.data.Dataset for better performance and prefetching
+    def generator_fn(gen):
+        for i in range(len(gen)):
+            yield gen[i]
+
+    output_signature = (
+        tf.TensorSpec(shape=(None, img_size, img_size, 3), dtype=tf.float32),
+        {
+            "cls_output": tf.TensorSpec(shape=(None, 3), dtype=tf.float32),
+            "seg_output": tf.TensorSpec(shape=(None, img_size, img_size, 4), dtype=tf.float32)
+        }
+    )
+
+    train_ds = tf.data.Dataset.from_generator(
+        lambda: generator_fn(train_gen),
+        output_signature=output_signature
+    ).prefetch(tf.data.AUTOTUNE)
+
+    val_ds = tf.data.Dataset.from_generator(
+        lambda: generator_fn(val_gen),
+        output_signature=output_signature
+    ).prefetch(tf.data.AUTOTUNE)
+    
+    # Add caching for validation to speed up training if RAM allows
+    val_ds = val_ds.cache()
+    
+    return train_ds, val_ds
 
 
 def load_and_preprocess_image(image_path, mask_path, class_id, target_size, num_classes, num_seg_classes):

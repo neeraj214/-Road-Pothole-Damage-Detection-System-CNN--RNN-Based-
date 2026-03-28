@@ -14,28 +14,23 @@ NUM_CLS_CLASSES = 3   # normal / crack / pothole
 
 def decoder_block(x, skip, filters, name):
     """
-    U-Net Decoder Block: UpSampling2D -> Concatenate -> Conv2D -> BN -> ReLU -> Conv2D -> BN -> ReLU
+    Lightweight Decoder Block: UpSampling2D -> Concatenate -> SeparableConv2D -> BN -> ReLU
     """
     x = layers.UpSampling2D(size=(2, 2), interpolation="bilinear", name=f"{name}_upsample")(x)
     x = layers.Concatenate(name=f"{name}_concat")([x, skip])
     
-    # Conv Block 1
-    x = layers.Conv2D(filters, (3, 3), padding="same", name=f"{name}_conv1")(x)
+    # Lightweight Separable Conv instead of heavy Conv2D
+    x = layers.SeparableConv2D(filters, (3, 3), padding="same", name=f"{name}_sepconv1")(x)
     x = layers.BatchNormalization(name=f"{name}_bn1")(x)
     x = layers.Activation("relu", name=f"{name}_relu1")(x)
     
-    # Conv Block 2
-    x = layers.Conv2D(filters, (3, 3), padding="same", name=f"{name}_conv2")(x)
-    x = layers.BatchNormalization(name=f"{name}_bn2")(x)
-    x = layers.Activation("relu", name=f"{name}_relu2")(x)
-    
     return x
 
-def build_dual_head_model(img_size=256, freeze_base=True):
+def build_dual_head_model(img_size=160, freeze_base=True):
     """
-    Builds an improved dual-head model (Classification + Segmentation) using MobileNetV2.
+    Builds a memory-optimized dual-head model for RTX 2050 (4GB).
     """
-    logger.info(f"Building Improved Dual-Head Model with input size: ({img_size}, {img_size}, 3)")
+    logger.info(f"Building OOM-optimized Model with input size: ({img_size}, {img_size}, 3)")
     
     inputs = layers.Input(shape=(img_size, img_size, 3), name="input_image")
     
@@ -44,7 +39,7 @@ def build_dual_head_model(img_size=256, freeze_base=True):
         include_top=False,
         weights="imagenet",
         input_tensor=inputs,
-        alpha=1.0 # Standard width
+        alpha=1.0 
     )
     
     if freeze_base:
@@ -55,68 +50,87 @@ def build_dual_head_model(img_size=256, freeze_base=True):
 
     # Extract skip connections for U-Net
     skip_layers = [
-        "block_1_expand_relu",   # 128x128 (if 256x256 input)
-        "block_3_expand_relu",   # 64x64
-        "block_6_expand_relu",   # 32x32
-        "block_13_expand_relu",  # 16x16
-        "out_relu"               # 8x8 (bottleneck)
+        "block_1_expand_relu",   # 80x80 (if 160x160 input)
+        "block_3_expand_relu",   # 40x40
+        "block_6_expand_relu",   # 20x20
+        "block_13_expand_relu",  # 10x10
+        "out_relu"               # 5x5 (bottleneck)
     ]
     
     skips = [base_model.get_layer(name).output for name in skip_layers]
     bottleneck = skips[-1]
     
     # 2. IMPROVED CLASSIFICATION HEAD
-    # Optimized for 80-90% accuracy with deeper layers and normalization
     cls_x = layers.GlobalAveragePooling2D(name="cls_gap")(bottleneck)
     
-    cls_x = layers.Dense(512, activation="relu", name="cls_dense_1")(cls_x)
+    cls_x = layers.Dense(256, activation="relu", name="cls_dense_1")(cls_x) # Reduced from 512
     cls_x = layers.BatchNormalization(name="cls_bn_1")(cls_x)
     cls_x = layers.Dropout(0.5, name="cls_dropout_1")(cls_x)
     
-    cls_x = layers.Dense(256, activation="relu", name="cls_dense_2")(cls_x)
+    cls_x = layers.Dense(128, activation="relu", name="cls_dense_2")(cls_x) # Reduced from 256
     cls_x = layers.BatchNormalization(name="cls_bn_2")(cls_x)
     cls_x = layers.Dropout(0.3, name="cls_dropout_2")(cls_x)
     
-    cls_output = layers.Dense(NUM_CLS_CLASSES, activation="softmax", name="cls_output")(cls_x)
+    cls_output = layers.Dense(NUM_CLS_CLASSES, activation="softmax", dtype='float32', name="cls_output")(cls_x)
     
-    # 3. U-NET DECODER HEAD (Segmentation)
-    d1 = decoder_block(bottleneck, skips[3], 256, name="dec1")
-    d2 = decoder_block(d1, skips[2], 128, name="dec2")
-    d3 = decoder_block(d2, skips[1], 64, name="dec3")
-    d4 = decoder_block(d3, skips[0], 32, name="dec4")
+    # 3. LIGHTWEIGHT DECODER HEAD (Reduced filters for OOM fix)
+    d1 = decoder_block(bottleneck, skips[3], 128, name="dec1") # Reduced from 256
+    d2 = decoder_block(d1, skips[2], 64, name="dec2") # Reduced from 128
+    d3 = decoder_block(d2, skips[1], 32, name="dec3") # Reduced from 64
+    d4 = decoder_block(d3, skips[0], 16, name="dec4") # Reduced from 32
     
     seg_x = layers.UpSampling2D(size=(2, 2), interpolation="bilinear", name="seg_final_upsample")(d4)
-    seg_output = layers.Conv2D(NUM_SEG_CLASSES, (1, 1), activation="softmax", name="seg_output")(seg_x)
+    seg_output = layers.Conv2D(NUM_SEG_CLASSES, (1, 1), activation="softmax", dtype='float32', name="seg_output")(seg_x)
     
     # Construct Model
-    model = Model(inputs=inputs, outputs=[cls_output, seg_output], name="Pothole_DualHead_V3")
+    model = Model(inputs=inputs, outputs=[cls_output, seg_output], name="Pothole_DualHead_V4")
     
     return model
 
-def unfreeze_top_layers(model, num_layers=15):
+def unfreeze_top_layers(model, num_layers=80):
     """
     Optimized unfreezing for Stage 2 fine-tuning.
-    1. Unfreezes the top N layers of the model.
-    2. Keeps ALL BatchNormalization layers frozen (even if in the top N) 
-       to maintain stable mean/variance statistics.
+    1. Unfreezes the top N layers of the entire model, including the backbone.
+    2. Keeps ALL BatchNormalization layers frozen for stability.
     """
+    # 1. Unfreeze the main model
     model.trainable = True
     
-    # Calculate how many layers to freeze from the bottom
-    num_total_layers = len(model.layers)
-    freeze_until = num_total_layers - num_layers
-    
-    for i, layer in enumerate(model.layers):
-        if i < freeze_until:
-            layer.trainable = False
-        else:
-            # Check if it's a BatchNormalization layer
-            if isinstance(layer, layers.BatchNormalization):
+    # 2. Handle Backbone (MobileNetV2) specifically if it's a nested model
+    backbone = None
+    for layer in model.layers:
+        if "mobilenetv2" in layer.name.lower():
+            backbone = layer
+            break
+            
+    if backbone:
+        backbone.trainable = True
+        # Calculate how many layers to freeze in the backbone
+        # MobileNetV2 has ~154 layers. We unfreeze the top 'num_layers'
+        num_backbone_layers = len(backbone.layers)
+        # We assume the user wants 'num_layers' total unfreezing including heads.
+        # But if they specifically said 50-80 layers of backbone, we focus there.
+        freeze_until = max(0, num_backbone_layers - num_layers)
+        
+        for i, layer in enumerate(backbone.layers):
+            if i < freeze_until:
+                layer.trainable = False
+            else:
+                # Keep BN frozen even in unfreezing zone
+                if isinstance(layer, layers.BatchNormalization) or "bn" in layer.name.lower():
+                    layer.trainable = False
+                else:
+                    layer.trainable = True
+        logger.info(f"Unfrozen top {num_layers} layers of backbone {backbone.name} (BN layers remain frozen).")
+
+    # 3. Ensure Head layers are unfrozen but BN remains frozen
+    for layer in model.layers:
+        if "mobilenetv2" not in layer.name.lower():
+            if isinstance(layer, layers.BatchNormalization) or "bn" in layer.name.lower():
                 layer.trainable = False
             else:
                 layer.trainable = True
-        
-    logger.info(f"Unfrozen the top {num_layers} non-BN layers for stable fine-tuning.")
+                
     return model
 
 if __name__ == "__main__":

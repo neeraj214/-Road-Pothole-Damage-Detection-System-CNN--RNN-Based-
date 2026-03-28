@@ -1,8 +1,16 @@
 import os
 import tensorflow as tf
 import numpy as np
+from tensorflow.keras import mixed_precision
 
-# --- GPU CONFIGURATION ---
+# --- MIXED PRECISION & GPU CONFIGURATION ---
+# Use mixed precision for RTX 2050 (Ampere architecture supports it well)
+try:
+    mixed_precision.set_global_policy('mixed_float16')
+    print("✅ Mixed precision (mixed_float16) enabled.")
+except Exception as e:
+    print(f"⚠️ Mixed precision not supported: {e}")
+
 gpus = tf.config.list_physical_devices('GPU')
 if gpus:
     try:
@@ -14,7 +22,7 @@ if gpus:
 
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau, TensorBoard, LambdaCallback
-from tensorflow.keras.losses import categorical_crossentropy
+from tensorflow.keras.losses import categorical_crossentropy, CategoricalCrossentropy
 import matplotlib.pyplot as plt
 import logging
 from src.model import build_dual_head_model, unfreeze_top_layers
@@ -27,7 +35,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Constants
-DATA_DIR = os.path.join(config.BASE_DIR, "data") # Broad scan of entire data folder
+DATA_DIR = os.path.join(config.BASE_DIR, "data") 
 MASK_DIR = config.MASK_DIR
 MODELS_DIR = config.MODELS_DIR
 LOGS_DIR = "logs"
@@ -109,134 +117,165 @@ def get_epoch_logger():
         )
     )
 
-def stage1_train(epochs=15):
+class GradientAccumulationModel(tf.keras.Model):
+    """
+    Custom model wrapper to implement gradient accumulation in model.fit()
+    """
+    def __init__(self, n_gradients, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.n_gradients = tf.constant(n_gradients, dtype=tf.int32)
+        self.n_steps = tf.Variable(0, trainable=False, dtype=tf.int32)
+        self.gradient_accumulation = [tf.Variable(tf.zeros_like(v), trainable=False) for v in self.trainable_variables]
+
+    def train_step(self, data):
+        x, y = data
+        self.n_steps.assign_add(1)
+
+        with tf.GradientTape() as tape:
+            y_pred = self(x, training=True)
+            loss = self.compiled_loss(y, y_pred, regularization_losses=self.losses)
+
+        gradients = tape.gradient(loss, self.trainable_variables)
+        
+        for i in range(len(gradients)):
+            self.gradient_accumulation[i].assign_add(gradients[i])
+
+        if tf.equal(self.n_steps % self.n_gradients, 0):
+            avg_gradients = [g / tf.cast(self.n_gradients, tf.float32) for g in self.gradient_accumulation]
+            self.optimizer.apply_gradients(zip(avg_gradients, self.trainable_variables))
+            
+            for i in range(len(self.gradient_accumulation)):
+                self.gradient_accumulation[i].assign(tf.zeros_like(self.gradient_accumulation[i]))
+            
+            self.n_steps.assign(0)
+
+        self.compiled_metrics.update_state(y, y_pred)
+        return {m.name: m.result() for m in self.metrics}
+
+def stage1_train(epochs=15, batch_size=config.BATCH_SIZE):
     """STAGE 1: Training improved heads with frozen backbone."""
-    logger.info("Starting STAGE 1: Improved Head training...")
+    tf.keras.backend.clear_session()
+    logger.info(f"Starting STAGE 1 (Batch Size: {batch_size})...")
     os.makedirs(MODELS_DIR, exist_ok=True)
     
-    # Compute Class Weights automatically from training labels
-    # We will pass these to the generator to create sample_weights
-    from sklearn.utils import class_weight
-    all_img_paths = []
-    all_cls_labels = []
-    valid_extensions = ('.png', '.jpg', '.jpeg', '.webp')
-    for root, dirs, files in os.walk(DATA_DIR):
-        for file in files:
-            if file.lower().endswith(valid_extensions):
-                path_lower = os.path.join(root, file).lower()
-                if "pothole" in path_lower: label_idx = 2
-                elif "crack" in path_lower or "damage" in path_lower: label_idx = 1
-                else: label_idx = 0
-                all_cls_labels.append(label_idx)
+    img_size = config.INPUT_SHAPE[0]
     
-    weights = class_weight.compute_class_weight('balanced', classes=np.unique(all_cls_labels), y=all_cls_labels)
-    class_weights_dict = dict(enumerate(weights))
-    logger.info(f"⚖️ Computed Class Weights: {class_weights_dict}")
+    try:
+        train_ds, val_ds = build_generators(
+            DATA_DIR, MASK_DIR, 
+            batch_size=batch_size,
+            img_size=img_size
+        )
+        
+        base_model = build_dual_head_model(img_size=img_size, freeze_base=True)
+        model = GradientAccumulationModel(n_gradients=config.ACCUMULATION_STEPS, inputs=base_model.inputs, outputs=base_model.outputs)
+        
+        model.compile(
+            optimizer=Adam(learning_rate=1e-3),
+            loss={
+                "cls_output": CategoricalCrossentropy(label_smoothing=0.1),
+                "seg_output": bce_dice_loss
+            },
+            loss_weights={"cls_output": 5.0, "seg_output": 1.0},
+            metrics={"cls_output": "accuracy", "seg_output": "accuracy"}
+        )
+        
+        callbacks = [
+            ModelCheckpoint(
+                os.path.join(MODELS_DIR, "stage1_v6.keras"), 
+                monitor="val_cls_output_accuracy", 
+                save_best_only=True, 
+                mode='max',
+                verbose=1
+            ),
+            EarlyStopping(monitor="val_cls_output_accuracy", patience=8, restore_best_weights=True, verbose=1),
+            ReduceLROnPlateau(monitor="val_cls_output_loss", factor=0.3, patience=2, min_lr=1e-6, verbose=1),
+            TensorBoard(log_dir=os.path.join(LOGS_DIR, "stage1_v6")),
+            get_epoch_logger()
+        ]
+        
+        history = model.fit(
+            train_ds, 
+            validation_data=val_ds, 
+            epochs=epochs, 
+            callbacks=callbacks
+        )
+        plot_training_history(history, os.path.join(RESULTS_DIR, "stage1_v6_history.png"), "Stage 1 V6")
+        return os.path.join(MODELS_DIR, "stage1_v6.keras")
 
-    # Load Data with 224x224 resolution and sample weights
-    train_gen, val_gen = build_generators(
-        DATA_DIR, MASK_DIR, 
-        batch_size=config.BATCH_SIZE,
-        img_size=224,
-        class_weights=class_weights_dict
-    )
-    
-    model = build_dual_head_model(img_size=224, freeze_base=True)
-    
-    # Use higher weight for classification (4.0) to reach 80-90% target
-    model.compile(
-        optimizer=Adam(learning_rate=1e-3),
-        loss={
-            "cls_output": "categorical_crossentropy",
-            "seg_output": bce_dice_loss
-        },
-        loss_weights={"cls_output": 4.0, "seg_output": 1.0},
-        metrics={"cls_output": "accuracy", "seg_output": "accuracy"}
-    )
-    
-    callbacks = [
-        ModelCheckpoint(
-            os.path.join(MODELS_DIR, "stage1_v4.keras"), 
-            monitor="val_cls_output_accuracy", 
-            save_best_only=True, 
-            mode='max',
-            verbose=1
-        ),
-        EarlyStopping(monitor="val_cls_output_accuracy", patience=8, restore_best_weights=True, verbose=1),
-        ReduceLROnPlateau(monitor="val_cls_output_accuracy", factor=0.5, patience=4, min_lr=1e-6, verbose=1),
-        TensorBoard(log_dir=os.path.join(LOGS_DIR, "stage1_v4")),
-        get_epoch_logger()
-    ]
-    
-    # NOTE: class_weight removed for multi-output compatibility. 
-    # Weights are now handled via sample_weights in the generator.
-    history = model.fit(
-        train_gen, 
-        validation_data=val_gen, 
-        epochs=epochs, 
-        callbacks=callbacks
-    )
-    plot_training_history(history, os.path.join(RESULTS_DIR, "stage1_v4_history.png"), "Stage 1 V4")
-    return os.path.join(MODELS_DIR, "stage1_v4.keras")
+    except tf.errors.ResourceExhaustedError:
+        logger.warning(f"OOM with batch size {batch_size}. Retrying with {batch_size // 2}...")
+        if batch_size > 1:
+            return stage1_train(epochs, batch_size // 2)
+        else:
+            raise
 
-def stage2_finetune(stage1_model_path, epochs=20):
-    """STAGE 2: Optimized Fine-tuning for 90% accuracy."""
-    logger.info("Starting STAGE 2: Optimized Fine-tuning...")
+def stage2_finetune(stage1_model_path, epochs=25, batch_size=config.BATCH_SIZE):
+    """STAGE 2: Optimized Fine-tuning."""
+    tf.keras.backend.clear_session()
+    logger.info(f"Starting STAGE 2 (Batch Size: {batch_size})...")
     
-    model = tf.keras.models.load_model(stage1_model_path, custom_objects={"bce_dice_loss": bce_dice_loss})
+    img_size = config.INPUT_SHAPE[0]
     
-    # Gradual unfreezing: Top 15 layers, keeping BN frozen for stability
-    model = unfreeze_top_layers(model, num_layers=15)
-    
-    # Load Data with 224x224 resolution and sample weights
-    train_gen, val_gen = build_generators(
-        DATA_DIR, MASK_DIR, 
-        batch_size=config.BATCH_SIZE,
-        img_size=224,
-        class_weights=class_weights_dict
-    )
-    
-    # Optimized LR for fine-tuning
-    model.compile(
-        optimizer=Adam(learning_rate=3e-5), 
-        loss={"cls_output": "categorical_crossentropy", "seg_output": bce_dice_loss},
-        loss_weights={"cls_output": 4.0, "seg_output": 1.0}, # Keep classification focus
-        metrics={"cls_output": "accuracy", "seg_output": "accuracy"}
-    )
-    
-    callbacks = [
-        ModelCheckpoint(
-            os.path.join(MODELS_DIR, "best_model_dual_v4.keras"), 
-            monitor="val_cls_output_accuracy", 
-            save_best_only=True, 
-            mode='max',
-            verbose=1
-        ),
-        EarlyStopping(monitor="val_cls_output_accuracy", patience=10, restore_best_weights=True, verbose=1),
-        ReduceLROnPlateau(monitor="val_cls_output_accuracy", factor=0.2, patience=5, min_lr=1e-7, verbose=1),
-        TensorBoard(log_dir=os.path.join(LOGS_DIR, "stage2_v4")),
-        get_epoch_logger()
-    ]
-    
-    # NOTE: class_weight removed for multi-output compatibility.
-    history = model.fit(
-        train_gen, 
-        validation_data=val_gen, 
-        epochs=epochs, 
-        callbacks=callbacks
-    )
-    plot_training_history(history, os.path.join(RESULTS_DIR, "stage2_v4_history.png"), "Stage 2 V4")
-    logger.info(f"🏆 Final optimized model saved to models/best_model_dual_v4.keras")
+    try:
+        loaded_model = tf.keras.models.load_model(stage1_model_path, custom_objects={"bce_dice_loss": bce_dice_loss})
+        loaded_model = unfreeze_top_layers(loaded_model, num_layers=80)
+        
+        model = GradientAccumulationModel(n_gradients=config.ACCUMULATION_STEPS, inputs=loaded_model.inputs, outputs=loaded_model.outputs)
+        
+        train_ds, val_ds = build_generators(
+            DATA_DIR, MASK_DIR, 
+            batch_size=batch_size,
+            img_size=img_size
+        )
+        
+        model.compile(
+            optimizer=Adam(learning_rate=3e-5), 
+            loss={
+                "cls_output": CategoricalCrossentropy(label_smoothing=0.1),
+                "seg_output": bce_dice_loss
+            },
+            loss_weights={"cls_output": 5.0, "seg_output": 1.0},
+            metrics={"cls_output": "accuracy", "seg_output": "accuracy"}
+        )
+        
+        callbacks = [
+            ModelCheckpoint(
+                os.path.join(MODELS_DIR, "best_model_dual_v6.keras"), 
+                monitor="val_cls_output_accuracy", 
+                save_best_only=True, 
+                mode='max',
+                verbose=1
+            ),
+            EarlyStopping(monitor="val_cls_output_accuracy", patience=10, restore_best_weights=True, verbose=1),
+            ReduceLROnPlateau(monitor="val_cls_output_loss", factor=0.3, patience=2, min_lr=1e-6, verbose=1),
+            TensorBoard(log_dir=os.path.join(LOGS_DIR, "stage2_v6")),
+            get_epoch_logger()
+        ]
+        
+        history = model.fit(
+            train_ds, 
+            validation_data=val_ds, 
+            epochs=epochs, 
+            callbacks=callbacks
+        )
+        plot_training_history(history, os.path.join(RESULTS_DIR, "stage2_v6_history.png"), "Stage 2 V6")
+        logger.info(f"🏆 Final optimized model saved to models/best_model_dual_v6.keras")
+
+    except tf.errors.ResourceExhaustedError:
+        logger.warning(f"OOM with batch size {batch_size}. Retrying with {batch_size // 2}...")
+        if batch_size > 1:
+            return stage2_finetune(stage1_model_path, epochs, batch_size // 2)
+        else:
+            raise
 
 if __name__ == "__main__":
     try:
-        # Check if Stage 1 model exists, else train it
-        stage1_path = os.path.join(MODELS_DIR, "stage1.keras")
+        stage1_path = os.path.join(MODELS_DIR, "stage1_v6.keras")
         if not os.path.exists(stage1_path):
             stage1_path = stage1_train(epochs=15)
         
-        # Run Improved Fine-tuning
-        stage2_finetune(stage1_path, epochs=10)
+        stage2_finetune(stage1_path, epochs=25)
     except Exception as e:
         logger.error(f"Training failed: {e}")
         import traceback
