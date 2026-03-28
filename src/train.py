@@ -1,4 +1,5 @@
 import os
+import shutil
 import tensorflow as tf
 import numpy as np
 from tensorflow.keras import mixed_precision
@@ -22,7 +23,7 @@ if gpus:
 
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau, TensorBoard, LambdaCallback
-from tensorflow.keras.losses import categorical_crossentropy, CategoricalCrossentropy
+from tensorflow.keras.losses import CategoricalCrossentropy
 import matplotlib.pyplot as plt
 import logging
 from src.model import build_dual_head_model, unfreeze_top_layers
@@ -40,6 +41,20 @@ MASK_DIR = config.MASK_DIR
 MODELS_DIR = config.MODELS_DIR
 LOGS_DIR = "logs"
 RESULTS_DIR = "results"
+
+def cleanup_model_path(path):
+    """
+    Safely removes a file or directory at the given path to avoid HDF5/dataset conflicts.
+    """
+    if os.path.exists(path):
+        try:
+            if os.path.isdir(path):
+                shutil.rmtree(path)
+            else:
+                os.remove(path)
+            logger.info(f"🧹 Cleaned up existing model path: {path}")
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to cleanup {path}: {e}")
 
 def plot_training_history(history, save_path, stage_name):
     """
@@ -125,9 +140,13 @@ class GradientAccumulationModel(tf.keras.Model):
         super().__init__(*args, **kwargs)
         self.n_gradients = tf.constant(n_gradients, dtype=tf.int32)
         self.n_steps = tf.Variable(0, trainable=False, dtype=tf.int32)
-        self.gradient_accumulation = [tf.Variable(tf.zeros_like(v), trainable=False) for v in self.trainable_variables]
+        self.gradient_accumulation = None
 
     def train_step(self, data):
+        # Initialize accumulation variables lazily on first step
+        if self.gradient_accumulation is None:
+            self.gradient_accumulation = [tf.Variable(tf.zeros_like(v), trainable=False) for v in self.trainable_variables]
+
         x, y = data
         self.n_steps.assign_add(1)
 
@@ -140,7 +159,7 @@ class GradientAccumulationModel(tf.keras.Model):
         for i in range(len(gradients)):
             self.gradient_accumulation[i].assign_add(gradients[i])
 
-        if tf.equal(self.n_steps % self.n_gradients, 0):
+        def apply_grads():
             avg_gradients = [g / tf.cast(self.n_gradients, tf.float32) for g in self.gradient_accumulation]
             self.optimizer.apply_gradients(zip(avg_gradients, self.trainable_variables))
             
@@ -148,6 +167,16 @@ class GradientAccumulationModel(tf.keras.Model):
                 self.gradient_accumulation[i].assign(tf.zeros_like(self.gradient_accumulation[i]))
             
             self.n_steps.assign(0)
+            return tf.constant(0)
+
+        def do_nothing():
+            return tf.constant(0)
+
+        tf.cond(
+            tf.equal(self.n_steps % self.n_gradients, 0),
+            apply_grads,
+            do_nothing
+        )
 
         self.compiled_metrics.update_state(y, y_pred)
         return {m.name: m.result() for m in self.metrics}
@@ -159,6 +188,8 @@ def stage1_train(epochs=15, batch_size=config.BATCH_SIZE):
     os.makedirs(MODELS_DIR, exist_ok=True)
     
     img_size = config.INPUT_SHAPE[0]
+    checkpoint_path = os.path.join(MODELS_DIR, "stage1_v6_tf")
+    cleanup_model_path(checkpoint_path)
     
     try:
         train_ds, val_ds = build_generators(
@@ -182,10 +213,11 @@ def stage1_train(epochs=15, batch_size=config.BATCH_SIZE):
         
         callbacks = [
             ModelCheckpoint(
-                os.path.join(MODELS_DIR, "stage1_v6.keras"), 
+                filepath=checkpoint_path, 
                 monitor="val_cls_output_accuracy", 
                 save_best_only=True, 
                 mode='max',
+                save_format="tf",
                 verbose=1
             ),
             EarlyStopping(monitor="val_cls_output_accuracy", patience=8, restore_best_weights=True, verbose=1),
@@ -201,7 +233,7 @@ def stage1_train(epochs=15, batch_size=config.BATCH_SIZE):
             callbacks=callbacks
         )
         plot_training_history(history, os.path.join(RESULTS_DIR, "stage1_v6_history.png"), "Stage 1 V6")
-        return os.path.join(MODELS_DIR, "stage1_v6.keras")
+        return checkpoint_path
 
     except tf.errors.ResourceExhaustedError:
         logger.warning(f"OOM with batch size {batch_size}. Retrying with {batch_size // 2}...")
@@ -216,6 +248,8 @@ def stage2_finetune(stage1_model_path, epochs=25, batch_size=config.BATCH_SIZE):
     logger.info(f"Starting STAGE 2 (Batch Size: {batch_size})...")
     
     img_size = config.INPUT_SHAPE[0]
+    final_checkpoint_path = os.path.join(MODELS_DIR, "best_model_dual_v6_tf")
+    cleanup_model_path(final_checkpoint_path)
     
     try:
         loaded_model = tf.keras.models.load_model(stage1_model_path, custom_objects={"bce_dice_loss": bce_dice_loss})
@@ -241,10 +275,11 @@ def stage2_finetune(stage1_model_path, epochs=25, batch_size=config.BATCH_SIZE):
         
         callbacks = [
             ModelCheckpoint(
-                os.path.join(MODELS_DIR, "best_model_dual_v6.keras"), 
+                filepath=final_checkpoint_path, 
                 monitor="val_cls_output_accuracy", 
                 save_best_only=True, 
                 mode='max',
+                save_format="tf",
                 verbose=1
             ),
             EarlyStopping(monitor="val_cls_output_accuracy", patience=10, restore_best_weights=True, verbose=1),
@@ -260,7 +295,7 @@ def stage2_finetune(stage1_model_path, epochs=25, batch_size=config.BATCH_SIZE):
             callbacks=callbacks
         )
         plot_training_history(history, os.path.join(RESULTS_DIR, "stage2_v6_history.png"), "Stage 2 V6")
-        logger.info(f"🏆 Final optimized model saved to models/best_model_dual_v6.keras")
+        logger.info(f"🏆 Final optimized model saved to {final_checkpoint_path}")
 
     except tf.errors.ResourceExhaustedError:
         logger.warning(f"OOM with batch size {batch_size}. Retrying with {batch_size // 2}...")
@@ -271,7 +306,7 @@ def stage2_finetune(stage1_model_path, epochs=25, batch_size=config.BATCH_SIZE):
 
 if __name__ == "__main__":
     try:
-        stage1_path = os.path.join(MODELS_DIR, "stage1_v6.keras")
+        stage1_path = os.path.join(MODELS_DIR, "stage1_v6_tf")
         if not os.path.exists(stage1_path):
             stage1_path = stage1_train(epochs=15)
         
@@ -280,3 +315,4 @@ if __name__ == "__main__":
         logger.error(f"Training failed: {e}")
         import traceback
         traceback.print_exc()
+
