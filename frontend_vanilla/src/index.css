@@ -1,0 +1,130 @@
+/* Design System: Precision Monolith */
+
+:root {
+  /* Colors & Surface Architecture */
+  --surface: #F8F8F6;
+  --surface-bright: #F8F8F6;
+  --surface-container-lowest: #FFFFFF;
+  --surface-container-low: #F4F4F2;
+  --surface-container: #EEEEEC;
+  --surface-container-high: #E8E8E6;
+  --surface-container-highest: #E2E3E1;
+  --surface-variant: #E2E3E1;
+  
+  --primary: #378ADD;
+  --on-primary: #FFFFFF;
+  --primary-container: #E8F4FF;
+  
+  --secondary: #639922; /* Stabilized environment */
+  --tertiary: #BA7517; /* Maintenance / Warning */
+  --error: #E24B4A; /* Critical / Pothole */
+  --on-error: #FFFFFF;
+  
+  --pothole-red: #BA1A1A;
+  --normal-green: #10B981;
+  --amber-warning: #D97706;
+  
+  --outline: #717783;
+  --outline-variant: rgba(113, 119, 131, 0.2); /* For 0.5px razor-edge look */
+  
+  --on-surface: #1A1C1B;
+  --on-surface-variant: #414751;
+  
+  /* Typography Hierarchy */
+  --font-main: 'Inter', system-ui, -apple-system, sans-serif;
+  
+  /* Spacing Scale (Generic) */
+  --spacing-1: 0.25rem;
+  --spacing-2: 0.5rem;
+  --spacing-3: 0.75rem;
+  --spacing-4: 1rem;
+  --spacing-6: 1.5rem;
+  --spacing-8: 2rem;
+  --spacing-12: 3rem;
+  --spacing-24: 6rem;
+  
+  /* Radii */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-full: 9999px;
+  
+  /* Elevation */
+  --shadow-ghost: 0px 4px 20px rgba(26, 28, 27, 0.04);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-main);
+  background-color: var(--surface);
+  color: var(--on-surface);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Base Styles */
+h1, h2, h3, h4 { font-weight: 700; letter-spacing: -0.02em; }
+h1 { font-size: 3.5rem; line-height: 1.1; }
+h2 { font-size: 2.25rem; }
+
+a { color: inherit; text-decoration: none; transition: color 0.15s ease-out; }
+
+/* Utilities - The Monolith Structure */
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 var(--spacing-6);
+}
+
+.surface-lowest { background-color: var(--surface-container-lowest); }
+.surface-low { background-color: var(--surface-container-low); }
+.surface-high { background-color: var(--surface-container-high); }
+
+.razor-border {
+  border: 1px solid var(--outline-variant); /* Fallback with opacity as per DESIGN.md */
+}
+
+/* Display & Editorial Headlines */
+.display-md {
+  font-size: 2.75rem;
+  letter-spacing: -0.02em;
+}
+
+.label-sm {
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.ghost-shadow {
+  box-shadow: var(--shadow-ghost);
+}
+
+.glass {
+  background: rgba(248, 248, 246, 0.8);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.digital-grid {
+  background-image: radial-gradient(circle, #e1e3e4 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in {
+  animation: fadeIn 0.6s ease-out forwards;
+}
