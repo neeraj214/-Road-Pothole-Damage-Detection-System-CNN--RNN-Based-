@@ -1,166 +1,218 @@
-import os
+import tensorflow as tf
 import numpy as np
-import base64
-try:
-    import tensorflow as tf
-except ImportError:
-    tf = None
-from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from PIL import Image
-import io
+import cv2
+import os
 import logging
-from src import config
+from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
 from src.utils import bce_dice_loss
+from src import config
 
-# Set up logging
+# GPU memory growth
+gpus = tf.config.list_physical_devices('GPU')
+if gpus:
+    try:
+        for gpu in gpus:
+            tf.config.experimental.set_memory_growth(gpu, True)
+    except RuntimeError as e:
+        print(f"GPU config error: {e}")
+
+# Load model once at startup
+MODEL_PATH = os.path.join(config.MODELS_DIR, "best_model_dual_v6_deeper_tf")
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Road Pothole Detection API")
+model = None
 
-# Enable CORS for frontend communication
+def load_model():
+    global model
+    try:
+        model = tf.keras.models.load_model(
+            MODEL_PATH,
+            custom_objects={"bce_dice_loss": bce_dice_loss},
+            compile=False
+        )
+        logger.info(f"Model loaded successfully from {MODEL_PATH}")
+    except Exception as e:
+        logger.error(f"Failed to load model: {e}")
+        raise
+
+load_model()
+
+app = FastAPI(
+    title="Road Pothole Detection API",
+    description="Detects potholes, cracks, and normal road surfaces",
+    version="2.0"
+)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify your frontend URL
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Global variable for the model
-model = None
-
-def load_trained_model():
-    global model
-    model_path = os.path.join(config.MODELS_DIR, config.MODEL_FILENAME)
+def preprocess_image(image_bytes: bytes, img_size: int = 160):
+    """
+    Preprocesses image bytes for MobileNetV2 inference.
+    Must match training preprocessing exactly.
+    """
+    # Decode image bytes to numpy array
+    nparr = np.frombuffer(image_bytes, np.uint8)
+    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
     
-    if os.path.exists(model_path):
-        try:
-            # Load model with custom objects
-            model = tf.keras.models.load_model(
-                model_path, 
-                custom_objects={"bce_dice_loss": bce_dice_loss},
-                compile=False
-            )
-            logger.info(f"Successfully loaded model from {model_path}")
-        except Exception as e:
-            logger.error(f"Error loading model: {e}")
-    else:
-        logger.warning(f"Model file not found at {model_path}. Predictions will use mock data until a model is trained.")
-
-# Load model on startup
-@app.on_event("startup")
-async def startup_event():
-    load_trained_model()
-
-@app.get("/")
-async def root():
-    return {"message": "Road Pothole Detection API is running"}
-
-def calculate_rps_score(mask):
-    """Calculates Road Pothole Severity (RPS) score based on weighted mask density."""
-    # mask: (H, W) with values 0, 1, 2, 3
-    rps_score = 0
-    total_pixels = mask.size
+    if img is None:
+        raise ValueError("Could not decode image")
     
-    for class_idx, weight in enumerate(config.RPS_WEIGHTS.values()):
-        if weight == 0: continue
-        pixels_count = np.sum(mask == class_idx)
-        rps_score += (pixels_count / total_pixels) * weight * 100
-        
-    return round(float(rps_score), 2)
-
-def mask_to_base64(mask):
-    """Converts a multi-class mask (0-3) to a base64 encoded PNG image."""
-    # mask: (H, W) with values 0, 1, 2, 3
-    # Multiply by 64 to make it visible (0, 64, 128, 192) or just keep as indices
-    # We'll keep as raw indices 0-3 for the frontend to map
-    mask_img = mask.astype(np.uint8)
-    if mask_img.ndim == 3 and mask_img.shape[-1] == 1:
-        mask_img = np.squeeze(mask_img, axis=-1)
+    # Convert BGR to RGB (cv2 loads as BGR)
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     
-    img = Image.fromarray(mask_img, mode='L')
-    buffered = io.BytesIO()
-    img.save(buffered, format="PNG")
-    return base64.b64encode(buffered.getvalue()).decode()
+    # Resize to model input size
+    img = cv2.resize(img, (img_size, img_size))
+    
+    # Apply MobileNetV2 preprocessing — scales to [-1, 1]
+    # DO NOT use img / 255.0 — this is wrong for MobileNetV2
+    img = preprocess_input(img.astype(np.float32))
+    
+    # Add batch dimension
+    img = np.expand_dims(img, axis=0)
+    
+    return img
+
+CLASS_NAMES = ["Normal", "Crack", "Pothole"]
+SEG_CLASS_NAMES = ["Background", "Hairline Crack", "Alligator Crack", "Deep Pothole"]
+
+# Repair Priority Score weights (from config)
+RPS_WEIGHTS = [0.0, 1.0, 2.5, 5.0]
 
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
-    global model
+    """
+    Accepts an image file and returns:
+    - Predicted road condition class
+    - Confidence scores for all 3 classes
+    - Dominant segmentation class
+    - Repair Priority Score (RPS)
+    """
+    if model is None:
+        raise HTTPException(status_code=503, detail="Model not loaded")
     
-    # 1. Validate file type
-    if not file.content_type.startswith('image/'):
-        raise HTTPException(status_code=400, detail="File must be an image")
-
+    # Validate file type
+    if not file.content_type.startswith("image/"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"File must be an image. Got: {file.content_type}"
+        )
+    
     try:
-        # 2. Read and preprocess image
-        contents = await file.read()
-        image = Image.open(io.BytesIO(contents)).convert('RGB')
+        # Read image bytes
+        image_bytes = await file.read()
         
-        # Resize to match model input shape (224, 224)
-        image_resized = image.resize((config.INPUT_SHAPE[0], config.INPUT_SHAPE[1]))
+        # Preprocess
+        img_size = config.INPUT_SHAPE[0]
+        processed_img = preprocess_image(image_bytes, img_size)
         
-        # Convert to numpy array and normalize
-        img_array = np.array(image_resized) / 255.0
-        img_array = np.expand_dims(img_array, axis=0)  # Add batch dimension
-
-        # 3. Perform prediction
-        if model is not None:
-            predictions = model.predict(img_array)
-            # Dual-head model returns [cls_output, seg_output]
-            cls_pred = predictions[0][0]
-            seg_pred = predictions[1][0] # (H, W, 4)
-            
-            class_idx = np.argmax(cls_pred)
-            confidence = float(cls_pred[class_idx])
-            prediction_class = config.CLASSES[class_idx]
-            
-            # Post-process mask: Argmax over channels to get (H, W) with 0-3
-            mask = np.argmax(seg_pred, axis=-1)
-            rps_score = calculate_rps_score(mask)
-            mask_base64 = mask_to_base64(mask)
-            
-        else:
-            # Mock response if model is not loaded (for testing frontend)
-            import random
-            prediction_class = random.choice(config.CLASSES)
-            confidence = random.uniform(0.85, 0.99)
-            
-            # Create a mock multi-class mask
-            mock_mask = np.zeros((config.INPUT_SHAPE[0], config.INPUT_SHAPE[1]), dtype=np.uint8)
-            if prediction_class != "normal":
-                yy, xx = np.mgrid[:224, :224]
-                # Different circles for different severity
-                if prediction_class == "pothole":
-                    # Deep pothole (index 3)
-                    circle = (xx - 112)**2 + (yy - 112)**2 < 50**2
-                    mock_mask[circle] = 3
-                else:
-                    # Cracks (index 1 or 2)
-                    circle1 = (xx - 80)**2 + (yy - 80)**2 < 30**2
-                    mock_mask[circle1] = 1
-                    circle2 = (xx - 150)**2 + (yy - 150)**2 < 40**2
-                    mock_mask[circle2] = 2
-            
-            rps_score = calculate_rps_score(mock_mask)
-            mask_base64 = mask_to_base64(mock_mask)
-            
-            logger.info("Using mock multi-class prediction and mask.")
-
-        return {
-            "class": prediction_class.capitalize(),
-            "confidence": confidence,
-            "rps_score": rps_score,
-            "mask": mask_base64,
-            "seg_classes": config.SEG_CLASSES
+        # Run inference
+        predictions = model(processed_img, training=False)
+        cls_pred = predictions[0].numpy()[0]   # shape: (3,)
+        seg_pred = predictions[1].numpy()[0]   # shape: (H, W, 4)
+        
+        # Classification result
+        predicted_class_idx = int(np.argmax(cls_pred))
+        predicted_class = CLASS_NAMES[predicted_class_idx]
+        confidence = float(cls_pred[predicted_class_idx])
+        
+        # All class confidences
+        class_confidences = {
+            CLASS_NAMES[i]: round(float(cls_pred[i]), 4)
+            for i in range(len(CLASS_NAMES))
         }
-
+        
+        # Segmentation result — find dominant damage class
+        seg_class_map = np.argmax(seg_pred, axis=-1)  # shape: (H, W)
+        seg_pixel_counts = np.bincount(
+            seg_class_map.flatten(), minlength=4
+        )
+        total_pixels = seg_class_map.size
+        
+        # Calculate damage coverage percentages
+        seg_coverage = {
+            SEG_CLASS_NAMES[i]: round(
+                float(seg_pixel_counts[i]) / total_pixels * 100, 2
+            )
+            for i in range(4)
+        }
+        
+        # Repair Priority Score
+        damage_pixels = total_pixels - seg_pixel_counts[0]  # exclude background
+        rps = float(np.sum([
+            seg_pixel_counts[i] * RPS_WEIGHTS[i]
+            for i in range(4)
+        ]) / total_pixels)
+        rps = round(rps, 4)
+        
+        # Severity label based on RPS
+        if rps < 0.5:
+            severity = "Low"
+        elif rps < 1.5:
+            severity = "Medium"
+        else:
+            severity = "High"
+        
+        return JSONResponse(content={
+            "status": "success",
+            "prediction": {
+                "class": predicted_class,
+                "confidence": round(confidence, 4),
+                "all_confidences": class_confidences,
+            },
+            "segmentation": {
+                "coverage_percent": seg_coverage,
+                "dominant_damage": SEG_CLASS_NAMES[
+                    int(np.argmax(seg_pixel_counts[1:])) + 1
+                ] if damage_pixels > 0 else "None",
+            },
+            "repair_priority": {
+                "score": rps,
+                "severity": severity,
+                "recommendation": (
+                    "No action needed" if predicted_class == "Normal"
+                    else f"Schedule {severity.lower()} priority repair"
+                )
+            }
+        })
+    
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Prediction error: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Inference failed: {str(e)}")
+
+@app.get("/health")
+async def health_check():
+    return {
+        "status": "healthy",
+        "model_loaded": model is not None,
+        "model_path": MODEL_PATH,
+        "input_shape": config.INPUT_SHAPE,
+        "classes": CLASS_NAMES
+    }
+
+@app.get("/")
+async def root():
+    return {"message": "Road Pothole Detection API is running. POST to /predict"}
+
+@app.on_event("startup")
+async def startup_event():
+    logger.info("Road Pothole Detection API starting up...")
+    logger.info(f"Model: {MODEL_PATH}")
+    logger.info(f"Input shape: {config.INPUT_SHAPE}")
+    logger.info(f"Classes: {CLASS_NAMES}")
+    logger.info("API ready to accept requests.")
 
 if __name__ == "__main__":
     import uvicorn
