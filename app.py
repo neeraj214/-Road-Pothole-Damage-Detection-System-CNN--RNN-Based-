@@ -31,17 +31,28 @@ logger = logging.getLogger(__name__)
 model = None
 
 def load_model():
-    """Load the Keras model. On failure, sets model=None so the API still starts."""
+    """Download (if needed) then load the Keras model. Sets model=None on any failure."""
     global model
+
+    # Attempt to download model from HF Model Hub if not present locally
+    try:
+        from download_model import download_model
+        download_model()
+    except ImportError:
+        # download_model.py not present (local dev without hf_space/ in path)
+        pass
+    except Exception as e:
+        logger.warning(f"download_model failed (non-fatal): {e}")
+
     if not os.path.exists(MODEL_PATH):
         logger.warning("=" * 60)
         logger.warning(f"Model not found at: {MODEL_PATH}")
         logger.warning("API will start but /predict will return 503.")
-        logger.warning("To fix: upload model to models/ folder or set")
-        logger.warning("        MODEL_PATH environment variable.")
+        logger.warning("Set MODEL_URL env var to auto-download from HF Model Hub.")
         logger.warning("=" * 60)
         model = None
         return
+
     try:
         model = tf.keras.models.load_model(
             MODEL_PATH,
@@ -236,4 +247,6 @@ async def startup_event():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # HF Spaces uses 7860; local dev fallback is 8000
+    port = int(os.getenv("PORT", 7860))
+    uvicorn.run(app, host="0.0.0.0", port=port)

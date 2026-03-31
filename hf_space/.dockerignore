@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+*.pyo
+.git/
+data/
+models/
+logs/
+results/
+gpu_env/
+frontend_vanilla/
+notebooks/
+scripts/
+temp_dataset/
+*.md
+.gitignore
+*.log
+*.zip
