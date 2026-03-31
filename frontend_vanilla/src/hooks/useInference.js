@@ -1,78 +1,133 @@
-import { useState, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { healthCheck, predict } from '../api';
+
+// ─── localStorage helpers ────────────────────────────────────────────────────
+
+const LS_KEY = 'roadsight_history';
+const MAX_HISTORY = 100;
+
+function loadHistory() {
+  try {
+    return JSON.parse(localStorage.getItem(LS_KEY) || '[]');
+  } catch {
+    return [];
+  }
+}
+
+function saveHistory(entries) {
+  localStorage.setItem(LS_KEY, JSON.stringify(entries));
+}
+
+function appendToHistory(entry) {
+  const history = loadHistory();
+  history.unshift(entry);               // newest first
+  if (history.length > MAX_HISTORY) {
+    history.length = MAX_HISTORY;       // drop oldest
+  }
+  saveHistory(history);
+  return history;
+}
+
+// ─── Hook ────────────────────────────────────────────────────────────────────
 
 /**
- * useInference Hook
- * Cleanly separates the backend inference logic from the UI.
- * Handles state management for image processing and results.
+ * useInference — central state hook for RoadSight Precision Dashboard.
+ *
+ * Exposes:
+ *  image          - base64 data-URL preview of selected file
+ *  file           - the raw File object (kept for FormData upload)
+ *  loading        - true while /predict request is in-flight
+ *  result         - full JSON response from /predict, or null
+ *  error          - error message string, or null
+ *  apiOnline      - boolean: is the FastAPI backend reachable?
+ *  history        - array of past predictions from localStorage
+ *  handleImageUpload(event) - file input onChange handler
+ *  handleFileDrop(file)     - raw File handler (from drag-and-drop)
+ *  runAnalysis()            - triggers POST /predict
  */
 export const useInference = () => {
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState(null);
-  const [error, setError] = useState(null);
-  const [image, setImage] = useState(null);
+  const [image, setImage]       = useState(null);   // data-URL for preview
+  const [file, setFile]         = useState(null);   // raw File for upload
+  const [loading, setLoading]   = useState(false);
+  const [result, setResult]     = useState(null);
+  const [error, setError]       = useState(null);
+  const [apiOnline, setApiOnline] = useState(false);
+  const [history, setHistory]   = useState(loadHistory);
 
-  const handleImageUpload = (file) => {
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      setImage(e.target.result);
-    };
-    reader.readAsDataURL(file);
-    // Reset results on new upload
+  // ── Health-check polling (every 30 s) ─────────────────────────────────────
+  const pollRef = useRef(null);
+
+  const checkHealth = useCallback(async () => {
+    const online = await healthCheck();
+    setApiOnline(online);
+  }, []);
+
+  useEffect(() => {
+    checkHealth();                                    // immediate on mount
+    pollRef.current = setInterval(checkHealth, 30_000);
+    return () => clearInterval(pollRef.current);
+  }, [checkHealth]);
+
+  // ── Internal: read a File into state ──────────────────────────────────────
+  const loadFile = (f) => {
+    if (!f) return;
+    setFile(f);
     setResult(null);
     setError(null);
+    const reader = new FileReader();
+    reader.onloadend = () => setImage(reader.result);
+    reader.readAsDataURL(f);
   };
 
-  const runAnalysis = useCallback(async () => {
-    if (!image) {
-      setError("Please upload an image first.");
-      return;
-    }
+  // ── Public: file-input onChange ────────────────────────────────────────────
+  const handleImageUpload = (event) => {
+    const f = event.target.files?.[0];
+    if (f) loadFile(f);
+  };
 
+  // ── Public: drag-and-drop ──────────────────────────────────────────────────
+  const handleFileDrop = (f) => {
+    if (f) loadFile(f);
+  };
+
+  // ── Public: run analysis ───────────────────────────────────────────────────
+  const runAnalysis = async () => {
+    if (!file) return;
     setLoading(true);
+    setResult(null);
     setError(null);
 
     try {
-      // Stub for backend API call (app.py)
-      // Example: const response = await fetch('/predict', { method: 'POST', body: ... });
-      
-      // Simulating a network delay for the AI analysis
-      await new Promise(resolve => setTimeout(resolve, 2400));
-      
-      // Mock result matching the "precision" and "editorial" requirements
-      const mockResult = {
-        hazard_type: "Pothole",
-        confidence: 0.984,
-        severity: "Critical",
-        detection_id: "RS-8892-PT",
-        metadata: {
-          lat: "40.7128N",
-          lng: "74.0060W",
-          timestamp: new Date().toISOString()
-        }
+      const data = await predict(file);
+      setResult(data);
+
+      // Persist to localStorage
+      const entry = {
+        id: `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        filename: file.name,
+        timestamp: new Date().toISOString(),
+        imageDataUrl: image,   // data-URL captured when file was selected
+        result: data,
       };
-      
-      setResult(mockResult);
+      const updated = appendToHistory(entry);
+      setHistory(updated);
     } catch (err) {
-      setError("Inference failed: " + err.message);
+      setError(err.message || 'Inference failed');
     } finally {
       setLoading(false);
     }
-  }, [image]);
-
-  const reset = () => {
-    setImage(null);
-    setResult(null);
-    setError(null);
   };
 
   return {
-    loading,
     image,
+    file,
+    loading,
     result,
     error,
+    apiOnline,
+    history,
     handleImageUpload,
+    handleFileDrop,
     runAnalysis,
-    reset
   };
 };

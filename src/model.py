@@ -60,24 +60,26 @@ def build_dual_head_model(img_size=160, freeze_base=True):
     skips = [base_model.get_layer(name).output for name in skip_layers]
     bottleneck = skips[-1]
     
-    # 2. IMPROVED CLASSIFICATION HEAD
-    cls_x = layers.GlobalAveragePooling2D(name="cls_gap")(bottleneck)
+    # 2. STRONGER CLASSIFICATION HEAD (GAP + GMP concatenation)
+    gap = layers.GlobalAveragePooling2D(name="cls_gap")(bottleneck)
+    gmp = layers.GlobalMaxPooling2D(name="cls_gmp")(bottleneck)
+    cls_x = layers.Concatenate(name="cls_pool_concat")([gap, gmp])
     
-    cls_x = layers.Dense(256, activation="relu", name="cls_dense_1")(cls_x) # Reduced from 512
+    cls_x = layers.Dense(512, activation="relu", name="cls_dense_1")(cls_x)
     cls_x = layers.BatchNormalization(name="cls_bn_1")(cls_x)
-    cls_x = layers.Dropout(0.5, name="cls_dropout_1")(cls_x)
+    cls_x = layers.Dropout(0.4, name="cls_dropout_1")(cls_x)
     
-    cls_x = layers.Dense(128, activation="relu", name="cls_dense_2")(cls_x) # Reduced from 256
+    cls_x = layers.Dense(256, activation="relu", name="cls_dense_2")(cls_x)
     cls_x = layers.BatchNormalization(name="cls_bn_2")(cls_x)
     cls_x = layers.Dropout(0.3, name="cls_dropout_2")(cls_x)
     
     cls_output = layers.Dense(NUM_CLS_CLASSES, activation="softmax", dtype='float32', name="cls_output")(cls_x)
     
     # 3. LIGHTWEIGHT DECODER HEAD (Reduced filters for OOM fix)
-    d1 = decoder_block(bottleneck, skips[3], 128, name="dec1") # Reduced from 256
-    d2 = decoder_block(d1, skips[2], 64, name="dec2") # Reduced from 128
-    d3 = decoder_block(d2, skips[1], 32, name="dec3") # Reduced from 64
-    d4 = decoder_block(d3, skips[0], 16, name="dec4") # Reduced from 32
+    d1 = decoder_block(bottleneck, skips[3], 128, name="dec1") 
+    d2 = decoder_block(d1, skips[2], 64, name="dec2") 
+    d3 = decoder_block(d2, skips[1], 32, name="dec3") 
+    d4 = decoder_block(d3, skips[0], 16, name="dec4") 
     
     seg_x = layers.UpSampling2D(size=(2, 2), interpolation="bilinear", name="seg_final_upsample")(d4)
     seg_output = layers.Conv2D(NUM_SEG_CLASSES, (1, 1), activation="softmax", dtype='float32', name="seg_output")(seg_x)
@@ -108,8 +110,6 @@ def unfreeze_top_layers(model, num_layers=80):
         # Calculate how many layers to freeze in the backbone
         # MobileNetV2 has ~154 layers. We unfreeze the top 'num_layers'
         num_backbone_layers = len(backbone.layers)
-        # We assume the user wants 'num_layers' total unfreezing including heads.
-        # But if they specifically said 50-80 layers of backbone, we focus there.
         freeze_until = max(0, num_backbone_layers - num_layers)
         
         for i, layer in enumerate(backbone.layers):

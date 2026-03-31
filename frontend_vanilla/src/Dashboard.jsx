@@ -4,16 +4,103 @@ import { Link } from 'react-router-dom';
 /**
  * RoadSight Precision | Dashboard Refined
  * Recreated Production Dashboard (Stitch Design)
+ * Data-wired to live FastAPI backend at http://localhost:8000
  */
 const Dashboard = () => {
-  const { image, loading, result, handleImageUpload, runAnalysis } = useInference();
+  const {
+    image,
+    loading,
+    result,
+    error,
+    apiOnline,
+    history,
+    handleImageUpload,
+    handleFileDrop,
+    runAnalysis,
+  } = useInference();
 
-  // Mock historical data for the Global Scan Registry
-  const historicalScans = [
-    { id: 'IMG_8422', entity: 'IMG_8422_POTHOLE.jpg', time: '2023-10-24 14:22:05', result: 'Pothole', confidence: 98, status: 'Critical', color: 'text-pothole-red', bg: 'bg-pothole-red', border: 'border-pothole-red' },
-    { id: 'IMG_8421', entity: 'IMG_8421_CRACK.jpg', time: '2023-10-24 14:15:32', result: 'Crack', confidence: 74, status: 'Warning', color: 'text-amber-600', bg: 'bg-amber-500', border: 'border-amber-500' },
-    { id: 'IMG_8420', entity: 'IMG_8420_NORMAL.jpg', time: '2023-10-24 14:02:11', result: 'Normal', confidence: 99, status: 'Clear', color: 'text-normal-green', bg: 'bg-normal-green', border: 'border-normal-green' },
+  // ── Metric card counts derived from localStorage history ──────────────────
+  const totalScanned  = history.length;
+  const potholeCount  = history.filter(h => h.result?.prediction?.class === 'Pothole').length;
+  const crackCount    = history.filter(h => h.result?.prediction?.class === 'Crack').length;
+  const normalCount   = history.filter(h => h.result?.prediction?.class === 'Normal').length;
+
+  // ── Map API result fields to display values ────────────────────────────────
+  const predClass      = result?.prediction?.class      ?? null;
+  const confPct        = result?.prediction?.confidence != null
+    ? (result.prediction.confidence * 100).toFixed(1)
+    : null;
+  const allConf        = result?.prediction?.all_confidences ?? {};
+  const coverage       = result?.segmentation?.coverage_percent ?? {};
+  const rpsScore       = result?.repair_priority?.score      ?? null;
+  const severity       = result?.repair_priority?.severity   ?? null;
+  const recommendation = result?.repair_priority?.recommendation ?? null;
+
+  // Severity → badge color mapping
+  const severityColor = {
+    High:   'bg-pothole-red',
+    Medium: 'bg-amber-500',
+    Low:    'bg-normal-green',
+  }[severity] ?? 'bg-pothole-red';
+
+  // Confidence bars: Pothole → Crack → Normal
+  const confidenceBars = [
+    { label: 'Pothole Signature',  key: 'Pothole', color: 'bg-pothole-red',  text: 'text-pothole-red' },
+    { label: 'Structural Fissure', key: 'Crack',   color: 'bg-amber-500',    text: 'text-amber-600'   },
+    { label: 'Baseline Pavement',  key: 'Normal',  color: 'bg-normal-green', text: 'text-normal-green' },
   ];
+
+  // Coverage grid cells: Background, Hairline Crack, Alligator Crack, Deep Pothole
+  const coverageItems = [
+    { label: 'Background',      key: 'Background',      color: 'bg-zinc-100'        },
+    { label: 'Hairline Crack',  key: 'Hairline Crack',  color: 'bg-amber-300/60'    },
+    { label: 'Alligator Crack', key: 'Alligator Crack', color: 'bg-pothole-red/60'  },
+    { label: 'Deep Pothole',    key: 'Deep Pothole',    color: 'bg-pothole-red/90'  },
+  ];
+
+  // ── History table rows (latest 10 shown) ──────────────────────────────────
+  const historyRows = history.slice(0, 10).map((h) => {
+    const cls = h.result?.prediction?.class ?? 'Unknown';
+    const conf = h.result?.prediction?.confidence != null
+      ? Math.round(h.result.prediction.confidence * 100)
+      : 0;
+    const statusMap = { Pothole: 'Critical', Crack: 'Warning', Normal: 'Clear' };
+    const colorMap  = {
+      Pothole: { color: 'text-pothole-red', bg: 'bg-pothole-red', border: 'border-pothole-red' },
+      Crack:   { color: 'text-amber-600',   bg: 'bg-amber-500',   border: 'border-amber-500'   },
+      Normal:  { color: 'text-normal-green', bg: 'bg-normal-green', border: 'border-normal-green' },
+    };
+    const colors = colorMap[cls] ?? colorMap.Normal;
+    return {
+      id:         h.id,
+      entity:     h.filename,
+      time:       new Date(h.timestamp).toLocaleString(),
+      result:     cls,
+      confidence: conf,
+      status:     statusMap[cls] ?? cls,
+      ...colors,
+    };
+  });
+
+  // Fall back to static placeholder rows when history is empty
+  const staticScans = [
+    { id: 'IMG_8422', entity: 'IMG_8422_POTHOLE.jpg', time: '2023-10-24 14:22:05', result: 'Pothole', confidence: 98, status: 'Critical', color: 'text-pothole-red', bg: 'bg-pothole-red', border: 'border-pothole-red' },
+    { id: 'IMG_8421', entity: 'IMG_8421_CRACK.jpg',   time: '2023-10-24 14:15:32', result: 'Crack',   confidence: 74, status: 'Warning',  color: 'text-amber-600',   bg: 'bg-amber-500',   border: 'border-amber-500'   },
+    { id: 'IMG_8420', entity: 'IMG_8420_NORMAL.jpg',  time: '2023-10-24 14:02:11', result: 'Normal',  confidence: 99, status: 'Clear',    color: 'text-normal-green', bg: 'bg-normal-green', border: 'border-normal-green' },
+  ];
+
+  const tableRows = historyRows.length > 0 ? historyRows : staticScans;
+
+  // ── Drag-and-drop handlers ─────────────────────────────────────────────────
+  const onDragOver  = (e) => e.preventDefault();
+  const onDrop = (e) => {
+    e.preventDefault();
+    const f = e.dataTransfer.files?.[0];
+    if (f && f.type.startsWith('image/')) {
+      // reuse the hook's file-drop handler
+      handleFileDrop(f);
+    }
+  };
 
   return (
     <div className="flex bg-surface font-headline text-on-surface antialiased digital-grid min-h-screen">
@@ -73,9 +160,14 @@ const Dashboard = () => {
             <span className="text-[11px] font-black text-zinc-400 uppercase tracking-widest">Infrastructure Analytics / Overview</span>
           </div>
           <div className="flex items-center gap-6">
-            <span className="text-[10px] font-black text-normal-green flex items-center gap-2 px-4 py-1.5 bg-normal-green/5 rounded-full border border-normal-green/10 uppercase tracking-widest">
-              <span className="w-2 h-2 rounded-full bg-normal-green animate-pulse"></span>
-              Neural Engine: Healthy
+            {/* Live API status badge — updated every 30 s via healthCheck() */}
+            <span className={`text-[10px] font-black flex items-center gap-2 px-4 py-1.5 rounded-full border uppercase tracking-widest transition-all ${
+              apiOnline
+                ? 'text-normal-green bg-normal-green/5 border-normal-green/10'
+                : 'text-pothole-red bg-pothole-red/5 border-pothole-red/10'
+            }`}>
+              <span className={`w-2 h-2 rounded-full animate-pulse ${apiOnline ? 'bg-normal-green' : 'bg-pothole-red'}`}></span>
+              Neural Engine: {apiOnline ? 'Healthy' : 'Offline'}
             </span>
             <div className="flex items-center gap-2">
               <button className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-surface-container transition-all material-symbols-outlined text-zinc-400 hover:text-primary">api</button>
@@ -87,13 +179,13 @@ const Dashboard = () => {
 
         {/* Canvas */}
         <div className="p-10 max-w-7xl mx-auto w-full space-y-10">
-          {/* Metric Cards Row */}
+          {/* Metric Cards Row — counts from localStorage history */}
           <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             {[
-              { label: 'Total Scanned', value: '1,284', grow: '+12%', color: 'primary', border: 'border-l-primary', icon: 'analytics' },
-              { label: 'Potholes Found', value: '42', grow: 'High Alert', color: 'pothole-red', border: 'border-l-pothole-red', icon: 'report_problem' },
-              { label: 'Cracks Found', value: '156', grow: 'Review Needs', color: 'amber-500', border: 'border-l-amber-500', icon: 'construction' },
-              { label: 'Normal Roads', value: '1,086', grow: 'Stable', color: 'normal-green', border: 'border-l-normal-green', icon: 'verified' }
+              { label: 'Total Scanned',  value: totalScanned,  grow: '+Latest',      color: 'primary',       border: 'border-l-primary',       icon: 'analytics'      },
+              { label: 'Potholes Found', value: potholeCount,  grow: 'High Alert',   color: 'pothole-red',   border: 'border-l-pothole-red',   icon: 'report_problem' },
+              { label: 'Cracks Found',   value: crackCount,    grow: 'Review Needs', color: 'amber-500',     border: 'border-l-amber-500',     icon: 'construction'   },
+              { label: 'Normal Roads',   value: normalCount,   grow: 'Stable',       color: 'normal-green',  border: 'border-l-normal-green',  icon: 'verified'       }
             ].map((metric) => (
               <div key={metric.label} className={`bg-surface-container-lowest thin-border rounded-2xl p-7 flex flex-col justify-between shadow-sm border-l-8 ${metric.border}`}>
                 <div className="flex justify-between items-start mb-8">
@@ -122,7 +214,11 @@ const Dashboard = () => {
               
               <div className="flex-1 flex flex-col gap-10 relative z-10">
                 {/* Drag & Drop Zone */}
-                <label className="border-2 border-dashed border-zinc-200 rounded-2xl p-12 flex flex-col items-center justify-center gap-6 bg-surface hover:bg-white hover:border-primary/40 transition-all cursor-pointer group/upload">
+                <label
+                  className="border-2 border-dashed border-zinc-200 rounded-2xl p-12 flex flex-col items-center justify-center gap-6 bg-surface hover:bg-white hover:border-primary/40 transition-all cursor-pointer group/upload"
+                  onDragOver={onDragOver}
+                  onDrop={onDrop}
+                >
                   <div className="w-16 h-16 rounded-2xl bg-primary/5 flex items-center justify-center text-primary group-hover/upload:bg-primary group-hover/upload:text-white transition-all shadow-sm">
                     <span className="material-symbols-outlined text-3xl">upload_file</span>
                   </div>
@@ -162,6 +258,14 @@ const Dashboard = () => {
                   </div>
                 </div>
 
+                {/* Error box */}
+                {error && (
+                  <div className="flex items-start gap-3 px-6 py-4 bg-pothole-red/10 border border-pothole-red/20 rounded-2xl">
+                    <span className="material-symbols-outlined text-pothole-red text-lg mt-0.5">error</span>
+                    <p className="text-[12px] font-black text-pothole-red tracking-tight">{error}</p>
+                  </div>
+                )}
+
                 <button 
                   onClick={runAnalysis}
                   className={`w-full py-5 rounded-2xl font-black text-sm uppercase tracking-widest transition-all shadow-xl active:scale-95 ${loading ? 'bg-zinc-200 text-zinc-500 cursor-wait' : 'bg-primary text-white hover:bg-primary-container'}`}
@@ -183,9 +287,9 @@ const Dashboard = () => {
                   <h3 className="text-[11px] font-black text-on-surface uppercase tracking-[0.2em]">Inference Analytics</h3>
                   <p className="text-[10px] text-zinc-500 font-bold mt-1 uppercase tracking-widest opacity-70">Tensor Processing Latency: 42ms</p>
                 </div>
-                <span className="bg-pothole-red text-white px-5 py-2 rounded-xl text-[10px] font-black tracking-widest flex items-center gap-3 shadow-lg group">
+                <span className={`${result ? severityColor : 'bg-pothole-red'} text-white px-5 py-2 rounded-xl text-[10px] font-black tracking-widest flex items-center gap-3 shadow-lg group`}>
                   <span className="w-2.5 h-2.5 rounded-full bg-white animate-ping"></span>
-                  {result ? result.status?.toUpperCase() || 'POTHOLE DETECTED' : 'SYSTEM IDLE'}
+                  {result ? (predClass?.toUpperCase() ?? 'ANALYSED') : 'SYSTEM IDLE'}
                 </span>
               </div>
 
@@ -195,15 +299,29 @@ const Dashboard = () => {
                   <p className="text-[10px] font-black text-pothole-red/60 uppercase mb-4 tracking-widest">Hazard Severity Index</p>
                   <div className="flex items-center gap-3">
                     <span className="material-symbols-outlined text-pothole-red text-3xl" style={{ fontVariationSettings: "'FILL' 1" }}>priority_high</span>
-                    <span className="text-3xl font-black text-pothole-red tracking-tighter">CRITICAL</span>
+                    <span className="text-3xl font-black text-pothole-red tracking-tighter">
+                      {severity?.toUpperCase() ?? 'CRITICAL'}
+                    </span>
                   </div>
                 </div>
                 <div className="bg-surface-container-low p-6 rounded-2xl border border-black/5 group hover:bg-surface-container transition-colors">
                   <p className="text-[10px] font-black text-zinc-400 uppercase mb-4 tracking-widest">Maintenance Priority</p>
                   <div className="flex items-center gap-3">
                     <span className="material-symbols-outlined text-zinc-900 text-3xl">precision_manufacturing</span>
-                    <span className="text-3xl font-black text-zinc-900 tracking-tighter">92.4 <span className="text-xs font-bold text-zinc-400 uppercase">Score</span></span>
+                    <span className="text-3xl font-black text-zinc-900 tracking-tighter">
+                      {rpsScore != null ? rpsScore.toFixed(2) : '—'}
+                      <span className="text-xs font-bold text-zinc-400 uppercase ml-1">Score</span>
+                    </span>
                   </div>
+                  {/* RPS progress bar */}
+                  {rpsScore != null && (
+                    <div className="mt-4 h-2 w-full bg-surface-container rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-pothole-red rounded-full transition-all duration-1000 ease-out"
+                        style={{ width: `${Math.min(rpsScore / 5 * 100, 100)}%` }}
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -214,33 +332,43 @@ const Dashboard = () => {
                   <span className="text-primary font-bold">Neural Verifier v4.2</span>
                 </p>
                 <div className="space-y-5">
-                  {[
-                    { label: 'Pothole Signature', val: (result ? 98.4 : 0), color: 'bg-pothole-red', text: 'text-pothole-red' },
-                    { label: 'Structural Fissure', val: (result ? 1.2 : 0), color: 'bg-amber-500', text: 'text-amber-600' },
-                    { label: 'Baseline Pavement', val: (result ? 0.4 : 0), color: 'bg-normal-green', text: 'text-normal-green' }
-                  ].map((row) => (
-                    <div key={row.label} className="space-y-2">
-                      <div className="flex justify-between text-[11px] font-black uppercase tracking-tight">
-                        <span className="text-on-surface">{row.label}</span>
-                        <span className={row.text}>{row.val}%</span>
+                  {confidenceBars.map((row) => {
+                    const rawVal = allConf[row.key];
+                    const val = rawVal != null ? parseFloat((rawVal * 100).toFixed(1)) : 0;
+                    return (
+                      <div key={row.label} className="space-y-2">
+                        <div className="flex justify-between text-[11px] font-black uppercase tracking-tight">
+                          <span className="text-on-surface">{row.label}</span>
+                          <span className={row.text}>{val}%</span>
+                        </div>
+                        <div className="h-2.5 w-full bg-surface-container rounded-full overflow-hidden shadow-inner">
+                          <div className={`h-full ${row.color} rounded-full transition-all duration-1000 ease-out shadow-[0px_0px_12px_rgba(0,0,0,0.1)]`} style={{ width: `${val}%` }}></div>
+                        </div>
                       </div>
-                      <div className="h-2.5 w-full bg-surface-container rounded-full overflow-hidden shadow-inner">
-                        <div className={`h-full ${row.color} rounded-full transition-all duration-1000 ease-out shadow-[0px_0px_12px_rgba(0,0,0,0.1)]`} style={{ width: `${row.val}%` }}></div>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
 
-              {/* Details & Heatmap */}
+              {/* Details & Coverage Grid */}
               <div className="flex gap-8 mt-4 pt-10 border-t border-black/5 relative z-10">
                 <div className="w-1/3">
                   <p className="text-[10px] font-black text-zinc-400 uppercase mb-5 tracking-widest">Defect Density Mask</p>
                   <div className="grid grid-cols-2 gap-2 h-24">
-                    <div className="bg-pothole-red/20 rounded-lg hover:bg-pothole-red/40 cursor-help transition-colors shadow-sm"></div>
-                    <div className="bg-pothole-red/90 rounded-lg animate-pulse shadow-md shadow-pothole-red/20"></div>
-                    <div className="bg-zinc-100 rounded-lg"></div>
-                    <div className="bg-pothole-red/60 rounded-lg shadow-sm"></div>
+                    {coverageItems.map((cell) => {
+                      const pct = coverage[cell.key];
+                      return (
+                        <div
+                          key={cell.key}
+                          title={`${cell.label}: ${pct != null ? pct.toFixed(1) + '%' : '—'}`}
+                          className={`${cell.color} rounded-lg cursor-help transition-colors shadow-sm hover:opacity-80 flex items-end p-1`}
+                        >
+                          {pct != null && (
+                            <span className="text-[8px] font-black text-white/80 leading-none">{pct.toFixed(0)}%</span>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
                 <div className="flex-1 bg-[#191c1d] p-7 border-l-8 border-pothole-red rounded-2xl shadow-2xl">
@@ -249,7 +377,10 @@ const Dashboard = () => {
                     <p className="text-[11px] font-black text-white uppercase tracking-widest">Automated Action Plan</p>
                   </div>
                   <p className="text-[11px] leading-relaxed text-zinc-400 font-bold italic tracking-tight">
-                    "Structural depth exceeds 15cm threshold. High probability of tire delamination for high-speed transit. Deploying asphalt patching unit [CODE_RED] within 24hr survey window."
+                    {recommendation
+                      ? `"${recommendation}"`
+                      : '"Structural depth exceeds 15cm threshold. High probability of tire delamination for high-speed transit. Deploying asphalt patching unit [CODE_RED] within 24hr survey window."'
+                    }
                   </p>
                 </div>
               </div>
@@ -279,7 +410,7 @@ const Dashboard = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-black/5">
-                  {historicalScans.map((scan) => (
+                  {tableRows.map((scan) => (
                     <tr key={scan.id} className="hover:bg-surface transition-all group duration-300">
                       <td className="px-10 py-6">
                         <div className="flex items-center gap-3">

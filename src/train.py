@@ -8,22 +8,24 @@ from tensorflow.keras import mixed_precision
 # Use mixed precision for RTX 2050 (Ampere architecture supports it well)
 try:
     mixed_precision.set_global_policy('mixed_float16')
-    print("✅ Mixed precision (mixed_float16) enabled.")
+    print("Mixed precision (mixed_float16) enabled.")
 except Exception as e:
-    print(f"⚠️ Mixed precision not supported: {e}")
+    print(f"Mixed precision not supported: {e}")
 
 gpus = tf.config.list_physical_devices('GPU')
 if gpus:
     try:
         for gpu in gpus:
             tf.config.experimental.set_memory_growth(gpu, True)
-        print(f"✅ GPU detected: {gpus[0].name}. Memory growth enabled.")
+        print(f"GPU detected: {gpus[0].name}. Memory growth enabled.")
     except RuntimeError as e:
-        print(f"❌ GPU config error: {e}")
+        print(f"GPU config error: {e}")
 
 from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.optimizers.schedules import CosineDecay
 from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau, TensorBoard, LambdaCallback
 from tensorflow.keras.losses import CategoricalCrossentropy
+from tensorflow.keras.metrics import MeanIoU
 import matplotlib.pyplot as plt
 import logging
 from src.model import build_dual_head_model, unfreeze_top_layers
@@ -42,6 +44,21 @@ MODELS_DIR = config.MODELS_DIR
 LOGS_DIR = "logs"
 RESULTS_DIR = "results"
 
+def weighted_categorical_crossentropy(class_weights):
+    weights_tensor = tf.constant(
+        [class_weights[i] for i in sorted(class_weights.keys())], 
+        dtype=tf.float32
+    )
+    def loss_fn(y_true, y_pred):
+        cce = CategoricalCrossentropy(label_smoothing=0.1, reduction='none')
+        per_sample_loss = cce(y_true, y_pred)
+        # Compute per-sample weight from the true class
+        sample_weights = tf.reduce_sum(
+            tf.cast(y_true, tf.float32) * weights_tensor, axis=-1
+        )
+        return tf.reduce_mean(per_sample_loss * sample_weights)
+    return loss_fn
+
 def cleanup_model_path(path):
     """
     Safely removes a file or directory at the given path to avoid HDF5/dataset conflicts.
@@ -52,9 +69,9 @@ def cleanup_model_path(path):
                 shutil.rmtree(path)
             else:
                 os.remove(path)
-            logger.info(f"🧹 Cleaned up existing model path: {path}")
+            logger.info(f"Cleaned up existing model path: {path}")
         except Exception as e:
-            logger.warning(f"⚠️ Failed to cleanup {path}: {e}")
+            logger.warning(f"Failed to cleanup {path}: {e}")
 
 def plot_training_history(history, save_path, stage_name):
     """
@@ -63,10 +80,17 @@ def plot_training_history(history, save_path, stage_name):
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     
     keys = history.history.keys()
-    # Find matching keys in history
-    loss_key = [k for k in keys if 'loss' in k and 'val' not in k and '_' not in k][0]
+    # BUG 3 FIX: Robust loss key identification
+    loss_key = next((k for k in keys if k == 'loss'), None)
+    if not loss_key:
+        loss_key = next((k for k in keys if 'loss' in k and 'val_' not in k 
+                         and 'cls' not in k and 'seg' not in k), None)
+    if not loss_key:
+        logger.warning("Could not find total loss key in history. Skipping plot.")
+        return
+
     cls_acc_key = [k for k in keys if 'cls_output_accuracy' in k and 'val' not in k][0]
-    seg_acc_key = [k for k in keys if 'seg_output_accuracy' in k and 'val' not in k][0]
+    seg_iou_key = [k for k in keys if 'seg_iou' in k and 'val' not in k][0]
     lr_key = [k for k in keys if 'lr' in k][0] if any('lr' in k for k in keys) else None
 
     epochs = range(1, len(history.history[loss_key]) + 1)
@@ -94,13 +118,13 @@ def plot_training_history(history, save_path, stage_name):
     plt.legend()
     plt.grid(True)
     
-    # Segmentation Accuracy
+    # Segmentation IoU
     plt.subplot(2, 2, 3)
-    plt.plot(epochs, history.history[seg_acc_key], 'b-', label='Train Seg Acc')
-    plt.plot(epochs, history.history[f'val_{seg_acc_key}'], 'r-', label='Val Seg Acc')
-    plt.title('Segmentation Accuracy')
+    plt.plot(epochs, history.history[seg_iou_key], 'b-', label='Train Seg IoU')
+    plt.plot(epochs, history.history[f'val_{seg_iou_key}'], 'r-', label='Val Seg IoU')
+    plt.title('Segmentation IoU')
     plt.xlabel('Epochs')
-    plt.ylabel('Accuracy')
+    plt.ylabel('IoU')
     plt.legend()
     plt.grid(True)
     
@@ -118,7 +142,7 @@ def plot_training_history(history, save_path, stage_name):
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     plt.savefig(save_path)
     plt.close()
-    logger.info(f"📊 History plot saved to {save_path}")
+    logger.info(f"History plot saved to {save_path}")
 
 def get_epoch_logger():
     """Returns a LambdaCallback for clean custom epoch logging."""
@@ -126,62 +150,59 @@ def get_epoch_logger():
         on_epoch_end=lambda epoch, logs: print(
             f"Epoch {epoch+1} | "
             f"cls_acc: {logs.get('cls_output_accuracy', 0):.3f} | "
-            f"seg_acc: {logs.get('seg_output_accuracy', 0):.3f} | "
+            f"seg_iou: {logs.get('seg_iou', 0):.3f} | "
             f"val_loss: {logs.get('val_loss', 0):.3f} | "
             f"LR: {logs.get('lr', 0):.7f}"
         )
     )
 
 class GradientAccumulationModel(tf.keras.Model):
-    """
-    Custom model wrapper to implement gradient accumulation in model.fit()
-    """
     def __init__(self, n_gradients, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.n_gradients = tf.constant(n_gradients, dtype=tf.int32)
         self.n_steps = tf.Variable(0, trainable=False, dtype=tf.int32)
-        self.gradient_accumulation = None
+        self._accum_grads = None
 
     def train_step(self, data):
-        # Initialize accumulation variables lazily on first step
-        if self.gradient_accumulation is None:
-            self.gradient_accumulation = [tf.Variable(tf.zeros_like(v), trainable=False) for v in self.trainable_variables]
-
         x, y = data
-        self.n_steps.assign_add(1)
-
+        
         with tf.GradientTape() as tape:
             y_pred = self(x, training=True)
             loss = self.compiled_loss(y, y_pred, regularization_losses=self.losses)
+            scaled_loss = self.optimizer.get_scaled_loss(loss)
 
-        gradients = tape.gradient(loss, self.trainable_variables)
+        # Initialize accumulation variables lazily on the first step
+        if self._accum_grads is None:
+            self._accum_grads = [
+                tf.Variable(tf.zeros_like(v), trainable=False, synchronization=tf.VariableSynchronization.ON_READ, aggregation=tf.VariableAggregation.ONLY_FIRST_REPLICA)
+                for v in self.trainable_variables
+            ]
+
+        self.n_steps.assign_add(1)
         
-        for i in range(len(gradients)):
-            self.gradient_accumulation[i].assign_add(gradients[i])
+        scaled_grads = tape.gradient(scaled_loss, self.trainable_variables)
+        grads = self.optimizer.get_unscaled_gradients(scaled_grads)
+
+        for i, g in enumerate(grads):
+            if g is not None:
+                self._accum_grads[i].assign_add(g / tf.cast(self.n_gradients, tf.float32))
 
         def apply_grads():
-            avg_gradients = [g / tf.cast(self.n_gradients, tf.float32) for g in self.gradient_accumulation]
-            self.optimizer.apply_gradients(zip(avg_gradients, self.trainable_variables))
-            
-            for i in range(len(self.gradient_accumulation)):
-                self.gradient_accumulation[i].assign(tf.zeros_like(self.gradient_accumulation[i]))
-            
+            self.optimizer.apply_gradients(zip(self._accum_grads, self.trainable_variables))
+            for g in self._accum_grads:
+                g.assign(tf.zeros_like(g))
             self.n_steps.assign(0)
             return tf.constant(0)
 
         def do_nothing():
             return tf.constant(0)
 
-        tf.cond(
-            tf.equal(self.n_steps % self.n_gradients, 0),
-            apply_grads,
-            do_nothing
-        )
+        tf.cond(tf.equal(self.n_steps % self.n_gradients, 0), apply_grads, do_nothing)
 
         self.compiled_metrics.update_state(y, y_pred)
         return {m.name: m.result() for m in self.metrics}
 
-def stage1_train(epochs=15, batch_size=config.BATCH_SIZE):
+def stage1_train(epochs=25, batch_size=config.BATCH_SIZE):
     """STAGE 1: Training improved heads with frozen backbone."""
     tf.keras.backend.clear_session()
     logger.info(f"Starting STAGE 1 (Batch Size: {batch_size})...")
@@ -201,14 +222,18 @@ def stage1_train(epochs=15, batch_size=config.BATCH_SIZE):
         base_model = build_dual_head_model(img_size=img_size, freeze_base=True)
         model = GradientAccumulationModel(n_gradients=config.ACCUMULATION_STEPS, inputs=base_model.inputs, outputs=base_model.outputs)
         
+        # USE OPTION A: Plain float LR instead of CosineDecay to avoid TensorBoard crash
         model.compile(
-            optimizer=Adam(learning_rate=1e-3),
+            optimizer=Adam(learning_rate=3e-4),
             loss={
-                "cls_output": CategoricalCrossentropy(label_smoothing=0.1),
+                "cls_output": weighted_categorical_crossentropy(config.CLASS_WEIGHTS),
                 "seg_output": bce_dice_loss
             },
-            loss_weights={"cls_output": 5.0, "seg_output": 1.0},
-            metrics={"cls_output": "accuracy", "seg_output": "accuracy"}
+            loss_weights={"cls_output": 2.0, "seg_output": 1.0},
+            metrics={
+                "cls_output": ["accuracy"],
+                "seg_output": [MeanIoU(num_classes=4, name="seg_iou")]
+            }
         )
         
         callbacks = [
@@ -220,8 +245,14 @@ def stage1_train(epochs=15, batch_size=config.BATCH_SIZE):
                 save_format="tf",
                 verbose=1
             ),
-            EarlyStopping(monitor="val_cls_output_accuracy", patience=8, restore_best_weights=True, verbose=1),
-            ReduceLROnPlateau(monitor="val_cls_output_loss", factor=0.3, patience=2, min_lr=1e-6, verbose=1),
+            EarlyStopping(
+                monitor="val_cls_output_accuracy", 
+                patience=12, 
+                restore_best_weights=True, 
+                min_delta=0.005, 
+                verbose=1
+            ),
+            ReduceLROnPlateau(monitor="val_loss", factor=0.3, patience=3, min_lr=1e-6, verbose=1),
             TensorBoard(log_dir=os.path.join(LOGS_DIR, "stage1_v6")),
             get_epoch_logger()
         ]
@@ -242,18 +273,23 @@ def stage1_train(epochs=15, batch_size=config.BATCH_SIZE):
         else:
             raise
 
-def stage2_finetune(stage1_model_path, epochs=25, batch_size=config.BATCH_SIZE):
-    """STAGE 2: Optimized Fine-tuning."""
+def stage2_finetune(model_path, epochs=25, batch_size=config.BATCH_SIZE, num_layers=80, learning_rate=3e-5, stage_name="v6"):
+    """STAGE 2: Optimized Fine-tuning with selective unfreezing."""
     tf.keras.backend.clear_session()
-    logger.info(f"Starting STAGE 2 (Batch Size: {batch_size})...")
+    logger.info(f"Starting {stage_name} Fine-tuning (Batch Size: {batch_size}, Layers: {num_layers}, LR: {learning_rate})...")
     
     img_size = config.INPUT_SHAPE[0]
-    final_checkpoint_path = os.path.join(MODELS_DIR, "best_model_dual_v6_tf")
+    final_checkpoint_path = os.path.join(MODELS_DIR, f"best_model_dual_{stage_name}_tf")
     cleanup_model_path(final_checkpoint_path)
     
     try:
-        loaded_model = tf.keras.models.load_model(stage1_model_path, custom_objects={"bce_dice_loss": bce_dice_loss})
-        loaded_model = unfreeze_top_layers(loaded_model, num_layers=80)
+        # Load Model without compiling to avoid custom loss deserialization issues
+        loaded_model = tf.keras.models.load_model(
+            model_path, 
+            custom_objects={"bce_dice_loss": bce_dice_loss, "MeanIoU": MeanIoU},
+            compile=False
+        )
+        loaded_model = unfreeze_top_layers(loaded_model, num_layers=num_layers)
         
         model = GradientAccumulationModel(n_gradients=config.ACCUMULATION_STEPS, inputs=loaded_model.inputs, outputs=loaded_model.outputs)
         
@@ -264,13 +300,16 @@ def stage2_finetune(stage1_model_path, epochs=25, batch_size=config.BATCH_SIZE):
         )
         
         model.compile(
-            optimizer=Adam(learning_rate=3e-5), 
+            optimizer=Adam(learning_rate=learning_rate), 
             loss={
-                "cls_output": CategoricalCrossentropy(label_smoothing=0.1),
+                "cls_output": weighted_categorical_crossentropy(config.CLASS_WEIGHTS),
                 "seg_output": bce_dice_loss
             },
             loss_weights={"cls_output": 5.0, "seg_output": 1.0},
-            metrics={"cls_output": "accuracy", "seg_output": "accuracy"}
+            metrics={
+                "cls_output": ["accuracy"],
+                "seg_output": [MeanIoU(num_classes=4, name="seg_iou")]
+            }
         )
         
         callbacks = [
@@ -283,8 +322,8 @@ def stage2_finetune(stage1_model_path, epochs=25, batch_size=config.BATCH_SIZE):
                 verbose=1
             ),
             EarlyStopping(monitor="val_cls_output_accuracy", patience=10, restore_best_weights=True, verbose=1),
-            ReduceLROnPlateau(monitor="val_cls_output_loss", factor=0.3, patience=2, min_lr=1e-6, verbose=1),
-            TensorBoard(log_dir=os.path.join(LOGS_DIR, "stage2_v6")),
+            ReduceLROnPlateau(monitor="val_loss", factor=0.3, patience=3, min_lr=1e-6, verbose=1),
+            TensorBoard(log_dir=os.path.join(LOGS_DIR, f"stage2_{stage_name}")),
             get_epoch_logger()
         ]
         
@@ -294,25 +333,38 @@ def stage2_finetune(stage1_model_path, epochs=25, batch_size=config.BATCH_SIZE):
             epochs=epochs, 
             callbacks=callbacks
         )
-        plot_training_history(history, os.path.join(RESULTS_DIR, "stage2_v6_history.png"), "Stage 2 V6")
-        logger.info(f"🏆 Final optimized model saved to {final_checkpoint_path}")
+        plot_training_history(history, os.path.join(RESULTS_DIR, f"stage2_{stage_name}_history.png"), f"Stage 2 {stage_name}")
+        logger.info(f"Final optimized model saved to {final_checkpoint_path}")
+        return final_checkpoint_path
 
     except tf.errors.ResourceExhaustedError:
         logger.warning(f"OOM with batch size {batch_size}. Retrying with {batch_size // 2}...")
         if batch_size > 1:
-            return stage2_finetune(stage1_model_path, epochs, batch_size // 2)
+            return stage2_finetune(model_path, epochs, batch_size // 2, num_layers, learning_rate, stage_name)
         else:
             raise
 
 if __name__ == "__main__":
     try:
+        # 1. Ensure Stage 1 exists
         stage1_path = os.path.join(MODELS_DIR, "stage1_v6_tf")
         if not os.path.exists(stage1_path):
-            stage1_path = stage1_train(epochs=15)
+            stage1_path = stage1_train(epochs=25)
+        else:
+            logger.info(f"Stage 1 checkpoint found at {stage1_path}")
         
-        stage2_finetune(stage1_path, epochs=25)
+        # 2. Check for existing Stage 2 (v6)
+        stage2_path = os.path.join(MODELS_DIR, "best_model_dual_v6_tf")
+        if not os.path.exists(stage2_path):
+            logger.info("Starting standard Stage 2 (80 layers, 3e-5)...")
+            stage2_path = stage2_finetune(stage1_path, epochs=25, num_layers=80, learning_rate=3e-5, stage_name="v6")
+        
+        # 3. Run "another" Stage 2 cycle (v6_deeper) as requested
+        # Unfreeze 120 layers, LR 1e-5, 15 epochs
+        logger.info("Starting Deeper Stage 2 Cycle (120 layers, 1e-5, 15 epochs)...")
+        stage2_finetune(stage2_path, epochs=15, num_layers=120, learning_rate=1e-5, stage_name="v6_deeper")
+        
     except Exception as e:
         logger.error(f"Training failed: {e}")
         import traceback
         traceback.print_exc()
-

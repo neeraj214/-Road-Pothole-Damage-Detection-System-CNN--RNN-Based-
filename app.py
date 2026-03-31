@@ -156,12 +156,13 @@ async def predict(file: UploadFile = File(...)):
         rps = round(rps, 4)
         
         # Severity label based on RPS
-        if rps < 0.5:
-            severity = "Low"
-        elif rps < 1.5:
+        # Thresholds: > 0.6 = High, 0.3–0.6 = Medium, < 0.3 = Low
+        if rps > 0.6:
+            severity = "High"
+        elif rps >= 0.3:
             severity = "Medium"
         else:
-            severity = "High"
+            severity = "Low"
         
         return JSONResponse(content={
             "status": "success",
@@ -197,8 +198,6 @@ async def health_check():
     return {
         "status": "healthy",
         "model_loaded": model is not None,
-        "model_path": MODEL_PATH,
-        "input_shape": config.INPUT_SHAPE,
         "classes": CLASS_NAMES
     }
 

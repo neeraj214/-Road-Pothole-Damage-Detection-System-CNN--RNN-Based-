@@ -3,8 +3,13 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.so
+*.pyc
+*.pyo
+*.pyd
 .Python
-env/
+*.egg-info/
+.installed.cfg
+*.egg
 build/
 develop-eggs/
 dist/
@@ -17,45 +22,59 @@ parts/
 sdist/
 var/
 wheels/
-*.egg-info/
-.installed.cfg
-*.egg
 
-# Data and Models
+# Virtual environments
+gpu_env/
+venv/
+env/
+ENV/
+.venv/
+
+# Model files (too large for GitHub)
+models/
+
+# Dataset (too large for GitHub)
 data/raw/*
 data/processed/*
-# Allow all .gitkeep files
 !**/.gitkeep
-models/*.h5
-models/*.keras
-models/*.tflite
 
-# IDEs
+# Training outputs
+logs/
+results/
+*.log
+train_output.log
+
+# Environment variables
+.env
+.env.local
+
+# Frontend — old folder
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/package-lock.json
+
+# Frontend — vanilla (active)
+frontend_vanilla/node_modules/
+frontend_vanilla/dist/
+frontend_vanilla/.vite/
+frontend_vanilla/package-lock.json
+frontend_vanilla/build_error.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
 .vscode/
 .idea/
 *.swp
 *.swo
 
-# OS
-.DS_Store
-Thumbs.db
-
-# Environment
-.env
-.venv
-venv/
-ENV/
-gpu_env/
-
-# Logs and Results
-logs/
-results/
-*.log
+# Misc project artifacts
 nee.py
-
-# Frontend
-frontend/node_modules/
-frontend/dist/
-frontend/package-lock.json
-
 Pothole-600 Dataset.zip
+temp_dataset/
+temp_dashboard.html
+temp_home.html
+temp_screen.html
