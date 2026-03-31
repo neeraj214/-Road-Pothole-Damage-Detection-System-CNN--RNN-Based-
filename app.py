@@ -19,8 +19,11 @@ if gpus:
     except RuntimeError as e:
         print(f"GPU config error: {e}")
 
-# Load model once at startup
-MODEL_PATH = os.path.join(config.MODELS_DIR, "best_model_dual_v6_deeper_tf")
+# Allow MODEL_PATH override via environment variable (useful for Render deployment)
+MODEL_PATH = os.getenv(
+    "MODEL_PATH",
+    os.path.join(config.MODELS_DIR, "best_model_dual_v6_deeper_tf")
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -28,7 +31,17 @@ logger = logging.getLogger(__name__)
 model = None
 
 def load_model():
+    """Load the Keras model. On failure, sets model=None so the API still starts."""
     global model
+    if not os.path.exists(MODEL_PATH):
+        logger.warning("=" * 60)
+        logger.warning(f"Model not found at: {MODEL_PATH}")
+        logger.warning("API will start but /predict will return 503.")
+        logger.warning("To fix: upload model to models/ folder or set")
+        logger.warning("        MODEL_PATH environment variable.")
+        logger.warning("=" * 60)
+        model = None
+        return
     try:
         model = tf.keras.models.load_model(
             MODEL_PATH,
@@ -38,7 +51,7 @@ def load_model():
         logger.info(f"Model loaded successfully from {MODEL_PATH}")
     except Exception as e:
         logger.error(f"Failed to load model: {e}")
-        raise
+        model = None
 
 load_model()
 
@@ -48,9 +61,14 @@ app = FastAPI(
     version="2.0"
 )
 
+# ALLOWED_ORIGINS env var lets you restrict CORS in production.
+# Example: ALLOWED_ORIGINS=https://my-app.vercel.app,https://my-other-domain.com
+# Default is "*" (allow all) for local dev / initial deployment.
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "*").split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -208,9 +226,12 @@ async def root():
 @app.on_event("startup")
 async def startup_event():
     logger.info("Road Pothole Detection API starting up...")
-    logger.info(f"Model: {MODEL_PATH}")
+    logger.info(f"Running in {'GPU' if gpus else 'CPU'} mode")
+    logger.info(f"Model path: {MODEL_PATH}")
+    logger.info(f"Model loaded: {model is not None}")
     logger.info(f"Input shape: {config.INPUT_SHAPE}")
     logger.info(f"Classes: {CLASS_NAMES}")
+    logger.info(f"Allowed origins: {ALLOWED_ORIGINS}")
     logger.info("API ready to accept requests.")
 
 if __name__ == "__main__":
