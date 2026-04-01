@@ -2,7 +2,7 @@
 title: Road Pothole Detection API
 emoji: 🛣️
 colorFrom: red
-colorTo: orange
+colorTo: red
 sdk: docker
 pinned: false
 ---
