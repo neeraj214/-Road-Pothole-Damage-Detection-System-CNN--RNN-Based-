@@ -17,6 +17,8 @@ How to upload your model:
 import os
 import zipfile
 import logging
+import shutil
+import glob
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +72,24 @@ def download_model() -> bool:
         with zipfile.ZipFile(zip_path, "r") as zip_ref:
             zip_ref.extractall(MODEL_DIR)
 
-        os.remove(zip_path)
+        # After extraction, find where saved_model.pb actually landed
+        matches = glob.glob("models/**/saved_model.pb", recursive=True)
+        if matches:
+            actual_dir = os.path.dirname(matches[0])
+            target_dir = MODEL_PATH  # models/best_model_dual_v6_deeper_tf
+            
+            if actual_dir != target_dir and not os.path.exists(target_dir):
+                shutil.move(actual_dir, target_dir)
+                logger.info(f"Moved model from {actual_dir} to {target_dir}")
+
+        # Remove zip file after extraction
+        if os.path.exists(zip_path):
+            os.remove(zip_path)
+            
+        for root, dirs, files in os.walk("models/"):
+            for f in files:
+                logger.info(f"Found: {os.path.join(root, f)}")
+
         logger.info(f"Model extracted to {MODEL_PATH}")
         return True
 
