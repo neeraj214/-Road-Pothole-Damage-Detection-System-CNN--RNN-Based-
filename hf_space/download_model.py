@@ -13,9 +13,9 @@ FILES_TO_DOWNLOAD = [
      f"{MODEL_DIR}/saved_model.pb"),
     (f"{BASE_URL}/keras_metadata.pb",
      f"{MODEL_DIR}/keras_metadata.pb"),
-    (f"{BASE_URL}/variables/variables.index",
+    (f"{BASE_URL}/variables.index",
      f"{VARIABLES_DIR}/variables.index"),
-    (f"{BASE_URL}/variables/variables.data-00000-of-00001",
+    (f"{BASE_URL}/variables.data-00000-of-00001",
      f"{VARIABLES_DIR}/variables.data-00000-of-00001"),
 ]
 
