@@ -4,7 +4,22 @@ import { healthCheck, predict } from '../api';
 // ─── localStorage helpers ────────────────────────────────────────────────────
 
 const LS_KEY = 'roadsight_history';
-const MAX_HISTORY = 100;
+const MAX_HISTORY = 20;
+
+async function compressThumbnail(imageDataUrl) {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.onload = () => {
+      const canvas = document.createElement('canvas')
+      canvas.width = 64
+      canvas.height = 64
+      const ctx = canvas.getContext('2d')
+      ctx.drawImage(img, 0, 0, 64, 64)
+      resolve(canvas.toDataURL('image/jpeg', 0.3))
+    }
+    img.src = imageDataUrl
+  })
+}
 
 function loadHistory() {
   try {
@@ -15,7 +30,21 @@ function loadHistory() {
 }
 
 function saveHistory(entries) {
-  localStorage.setItem(LS_KEY, JSON.stringify(entries));
+  const value = JSON.stringify(entries);
+  try {
+    localStorage.setItem(LS_KEY, value);
+  } catch (e) {
+    if (e.name === 'QuotaExceededError') {
+      // Remove oldest entries and retry
+      const history = JSON.parse(localStorage.getItem(LS_KEY) || '[]');
+      history.splice(-5);
+      try {
+        localStorage.setItem(LS_KEY, JSON.stringify(history));
+      } catch {
+        localStorage.removeItem(LS_KEY);
+      }
+    }
+  }
 }
 
 function appendToHistory(entry) {
@@ -102,11 +131,12 @@ export const useInference = () => {
       setResult(data);
 
       // Persist to localStorage
+      const thumbnailUrl = image ? await compressThumbnail(image) : null;
       const entry = {
         id: `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
         filename: file.name,
         timestamp: new Date().toISOString(),
-        imageDataUrl: image,   // data-URL captured when file was selected
+        imageDataUrl: thumbnailUrl,   // store tiny thumbnail specifically saved for history
         result: data,
       };
       const updated = appendToHistory(entry);
