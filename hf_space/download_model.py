@@ -27,13 +27,20 @@ MODEL_NAME = "best_model_dual_v6_deeper_tf"
 MODEL_PATH = os.path.join(MODEL_DIR, MODEL_NAME)
 
 
+def model_is_ready() -> bool:
+    matches = glob.glob(
+        os.path.join(MODEL_DIR, "**", "saved_model.pb"),
+        recursive=True
+    )
+    return len(matches) > 0
+
 def download_model() -> bool:
     """
     Downloads and extracts the model from MODEL_URL if it isn't already present.
     Returns True if model is available (whether downloaded now or pre-existing).
     """
-    if os.path.exists(MODEL_PATH):
-        logger.info(f"Model already present at {MODEL_PATH} — skipping download.")
+    if model_is_ready():
+        logger.info(f"Model already present — skipping download.")
         return True
 
     MODEL_URL = os.getenv("MODEL_URL", "").strip()
@@ -90,8 +97,8 @@ def download_model() -> bool:
             for f in files:
                 logger.info(f"Found: {os.path.join(root, f)}")
 
-        logger.info(f"Model extracted to {MODEL_PATH}")
-        return True
+        logger.info(f"Model extracted. Ready: {model_is_ready()}")
+        return model_is_ready()
 
     except Exception as e:
         logger.error(f"Model download failed: {e}")

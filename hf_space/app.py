@@ -30,6 +30,17 @@ logger = logging.getLogger(__name__)
 
 model = None
 
+import glob
+
+def find_model_path(base_dir):
+    matches = glob.glob(
+        os.path.join(base_dir, "**", "saved_model.pb"),
+        recursive=True
+    )
+    if matches:
+        return os.path.dirname(matches[0])
+    return None
+
 def load_model():
     """Download (if needed) then load the Keras model. Sets model=None on any failure."""
     global model
@@ -44,9 +55,10 @@ def load_model():
     except Exception as e:
         logger.warning(f"download_model failed (non-fatal): {e}")
 
-    if not os.path.exists(MODEL_PATH):
+    actual_path = find_model_path(config.MODELS_DIR)
+    if not actual_path:
         logger.warning("=" * 60)
-        logger.warning(f"Model not found at: {MODEL_PATH}")
+        logger.warning(f"Model not found in {config.MODELS_DIR}")
         logger.warning("API will start but /predict will return 503.")
         logger.warning("Set MODEL_URL env var to auto-download from HF Model Hub.")
         logger.warning("=" * 60)
@@ -55,11 +67,11 @@ def load_model():
 
     try:
         model = tf.keras.models.load_model(
-            MODEL_PATH,
+            actual_path,
             custom_objects={"bce_dice_loss": bce_dice_loss},
             compile=False
         )
-        logger.info(f"Model loaded successfully from {MODEL_PATH}")
+        logger.info(f"Model loaded successfully from {actual_path}")
     except Exception as e:
         logger.error(f"Failed to load model: {e}")
         model = None
