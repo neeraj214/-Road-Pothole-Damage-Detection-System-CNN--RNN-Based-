@@ -78,3 +78,16 @@ temp_dataset/
 temp_dashboard.html
 temp_home.html
 temp_screen.html
+
+# Testing & Cache
+.pytest_cache/
+.coverage
+htmlcov/
+.ipynb_checkpoints/
+desktop.ini
+*.tmp
+
+# Specific model checkpoints (already covered by models/ but added for clarity)
+models/stage1_v6_tf/
+models/best_model_dual_v6_tf/
+models/best_model_stage3_tf/
