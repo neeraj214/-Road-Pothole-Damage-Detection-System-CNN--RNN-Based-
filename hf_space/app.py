@@ -188,15 +188,33 @@ async def predict(file: UploadFile = File(...)):
             for i in range(4)
         }
         
-        # Repair Priority Score
+        # Repair Priority Score — calculated from segmentation map
         damage_pixels = total_pixels - seg_pixel_counts[0]  # exclude background
         rps = float(np.sum([
             seg_pixel_counts[i] * RPS_WEIGHTS[i]
             for i in range(4)
         ]) / total_pixels)
         rps = round(rps, 4)
-        
-        # Severity label based on RPS
+
+        # FALLBACK: If segmentation gives no damage signal (RPS < 0.05),
+        # derive severity from classification result and confidence.
+        # This handles cases where the segmentation head predicts all background
+        # even when the classifier detects a pothole/crack with high confidence.
+        if rps < 0.05:
+            predicted_class_name = CLASS_NAMES[predicted_class_idx]
+            confidence_val = float(cls_pred[predicted_class_idx])
+
+            if predicted_class_name == "Pothole":
+                # Pothole: scale RPS by confidence (0.6 to 1.5 range)
+                rps = round(0.6 + (confidence_val * 0.9), 4)
+            elif predicted_class_name == "Crack":
+                # Crack: scale RPS by confidence (0.2 to 0.6 range)
+                rps = round(0.2 + (confidence_val * 0.4), 4)
+            else:
+                # Normal: keep RPS at 0
+                rps = 0.0
+
+        # Severity label based on final RPS
         # Thresholds: > 0.6 = High, 0.3–0.6 = Medium, < 0.3 = Low
         if rps > 0.6:
             severity = "High"
@@ -204,7 +222,7 @@ async def predict(file: UploadFile = File(...)):
             severity = "Medium"
         else:
             severity = "Low"
-        
+
         return JSONResponse(content={
             "status": "success",
             "prediction": {
