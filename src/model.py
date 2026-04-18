@@ -1,7 +1,6 @@
 import tensorflow as tf
-from tensorflow.keras import layers, models, Model
+from tensorflow.keras import layers, Model
 from tensorflow.keras.applications import MobileNetV2
-import numpy as np
 import logging
 
 # Set up logging
@@ -134,6 +133,7 @@ def unfreeze_top_layers(model, num_layers=80):
     return model
 
 if __name__ == "__main__":
+    import numpy as np  # only needed for the architecture smoke-test below
     # Quick architecture test
     try:
         # 1. Build the model with freeze_base=True
