@@ -20,18 +20,18 @@ def get_strong_augmentations(img_size=160):
         A.RandomBrightnessContrast(
             brightness_limit=0.35, contrast_limit=0.35, p=0.7),
         A.MotionBlur(blur_limit=7, p=0.4),
-        A.GaussNoise(var_limit=(10.0, 80.0), p=0.4),
+        A.GaussNoise(std_limit=(3.0, 10.0), p=0.4),
         A.HorizontalFlip(p=0.5),
         A.VerticalFlip(p=0.2),
         A.ShiftScaleRotate(
             shift_limit=0.1, scale_limit=0.15, rotate_limit=20, p=0.6),
         A.OneOf([
             A.RandomShadow(p=0.3),
-            A.RandomFog(fog_coef_lower=0.1, fog_coef_upper=0.3, p=0.2),
+            A.RandomFog(fog_coef_range=(0.1, 0.3), p=0.2),
             A.RandomRain(p=0.2),
         ], p=0.4),
         A.CoarseDropout(
-            max_holes=8, max_height=20, max_width=20, p=0.3),
+            num_holes_range=(1, 8), hole_height_range=(10, 20), hole_width_range=(10, 20), p=0.3),
         A.GridDistortion(p=0.2),
     ], additional_targets={'mask': 'mask'}, is_check_shapes=False)
 
