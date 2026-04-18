@@ -96,6 +96,14 @@ npm install && npm run dev
 
 ---
 
+## 📅 Recent Updates
+
+- **Backend Optimization:** Converted deprecated FastAPI `@app.on_event` handlers to modern `lifespan` context managers.
+- **Pipeline Reliability:** Resolved `IndexError` vulnerabilities in metric extraction and updated deprecated `albumentations` v2.x keyword arguments.
+- **Code Quality:** Cleared all Pyrefly and Pylint warnings, optimizing imports and improving codebase maintainability.
+
+---
+
 ## 🗺️ Roadmap & Future
 - [ ] **Mobile Integration**: Native Android/iOS wrappers for on-site logging.
 - [ ] **Geospatial Mapping**: Automatic GPS tagging of detected defects.
