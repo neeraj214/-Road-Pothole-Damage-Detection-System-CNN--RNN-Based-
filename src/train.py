@@ -89,9 +89,13 @@ def plot_training_history(history, save_path, stage_name):
         logger.warning("Could not find total loss key in history. Skipping plot.")
         return
 
-    cls_acc_key = [k for k in keys if 'cls_output_accuracy' in k and 'val' not in k][0]
-    seg_iou_key = [k for k in keys if 'seg_iou' in k and 'val' not in k][0]
-    lr_key = [k for k in keys if 'lr' in k][0] if any('lr' in k for k in keys) else None
+    cls_acc_key = next((k for k in keys if 'cls_output_accuracy' in k and 'val' not in k), None)
+    seg_iou_key = next((k for k in keys if 'seg_iou' in k and 'val' not in k), None)
+    lr_key = next((k for k in keys if k == 'lr'), None)
+
+    if not cls_acc_key or not seg_iou_key:
+        logger.warning("Could not find cls_acc or seg_iou keys in history. Skipping plot.")
+        return
 
     epochs = range(1, len(history.history[loss_key]) + 1)
     
