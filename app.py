@@ -7,7 +7,7 @@ from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
-from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
+preprocess_input = tf.keras.applications.mobilenet_v2.preprocess_input  # type: ignore[attr-defined]
 from src.utils import bce_dice_loss
 from src import config
 
@@ -37,7 +37,7 @@ def load_model():
 
     # Attempt to download model from HF Model Hub if not present locally
     try:
-        from download_model import download_model
+        from download_model import download_model  # type: ignore[import]
         download_model()
     except ImportError:
         # download_model.py not present (local dev without hf_space/ in path)
