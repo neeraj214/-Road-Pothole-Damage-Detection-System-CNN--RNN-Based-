@@ -6,6 +6,7 @@ import logging
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from contextlib import asynccontextmanager
 from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
 from src.utils import bce_dice_loss
 from src import config
@@ -66,10 +67,23 @@ def load_model():
 
 load_model()
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logger.info("Road Pothole Detection API starting up...")
+    logger.info(f"Running in {'GPU' if gpus else 'CPU'} mode")
+    logger.info(f"Model path: {MODEL_PATH}")
+    logger.info(f"Model loaded: {model is not None}")
+    logger.info(f"Input shape: {config.INPUT_SHAPE}")
+    logger.info(f"Classes: {CLASS_NAMES}")
+    logger.info(f"Allowed origins: {ALLOWED_ORIGINS}")
+    logger.info("API ready to accept requests.")
+    yield
+
 app = FastAPI(
     title="Road Pothole Detection API",
     description="Detects potholes, cracks, and normal road surfaces",
-    version="2.0"
+    version="2.0",
+    lifespan=lifespan
 )
 
 # ALLOWED_ORIGINS env var lets you restrict CORS in production.
@@ -252,16 +266,6 @@ async def health_check():
 async def root():
     return {"message": "Road Pothole Detection API is running. POST to /predict"}
 
-@app.on_event("startup")
-async def startup_event():
-    logger.info("Road Pothole Detection API starting up...")
-    logger.info(f"Running in {'GPU' if gpus else 'CPU'} mode")
-    logger.info(f"Model path: {MODEL_PATH}")
-    logger.info(f"Model loaded: {model is not None}")
-    logger.info(f"Input shape: {config.INPUT_SHAPE}")
-    logger.info(f"Classes: {CLASS_NAMES}")
-    logger.info(f"Allowed origins: {ALLOWED_ORIGINS}")
-    logger.info("API ready to accept requests.")
 
 if __name__ == "__main__":
     import uvicorn
