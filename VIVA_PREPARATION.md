@@ -391,3 +391,86 @@ Gives maintenance teams a single actionable urgency number
 
 **Q: What is the inference time of your model?**
 **A:** Local GPU (RTX 2050): ~42ms per image. Hugging Face CPU: ~200-500ms per image. Fast enough for batch processing of road survey images.
+
+## === SECTION 13: ADVANCED DEEP LEARNING & ML CORE CONCEPTS ===
+
+> [!IMPORTANT]
+> This section dives deep into the theoretical and mathematical foundations of the project. Viva examiners love asking *why* and *how* behind the architecture and optimizations.
+
+### 1. MOBILENETV2: The Deep Architecture
+**Q: Explain Depthwise Separable Convolutions mathematically.**
+**A:** Standard convolutions perform spatial and channel mixing in one step. Depthwise Separable Convolutions split this into two steps, drastically reducing computation:
+1. **Depthwise Conv:** Applies a single 2D spatial filter strictly per input channel (no cross-channel mixing).
+   - *Cost:* $D_k \times D_k \times M \times D_f \times D_f$ (where $D_k$ is kernel size, $M$ is input channels, $D_f$ is feature map size)
+2. **Pointwise Conv (1x1):** Mixes the channels linearly. Applies $N$ filters of size $1 \times 1 \times M$.
+   - *Cost:* $M \times N \times D_f \times D_f$
+**Total Reduction Ratio:** $\frac{1}{N} + \frac{1}{D_k^2}$. For a $3 \times 3$ kernel, this natively uses **~8-9x fewer parameters and FLOPs** than a standard convolution without losing expressive power.
+
+**Q: What are Inverted Residuals?**
+**A:** Standard ResNets follow a *Wide -> Narrow -> Wide* bottleneck pattern (high channels -> compress with 1x1 -> 3x3 -> expand with 1x1 -> skip connection). 
+MobileNetV2 uses an **Inverted Residual Block**: *Narrow -> Wide -> Narrow*.
+- It expands the low-dimensional input to a high dimension using a 1x1 conv.
+- Performs Depthwise Conv in this high-dimensional space (to extract rich spatial features).
+- Projects it back to a low-dimensional space using a linear 1x1 conv.
+- The skip connection bridges the *narrow* bottlenecks, which vastly improves GPU memory efficiency.
+
+**Q: What is a Linear Bottleneck and why is it used?**
+**A:** In the final 1x1 projection layer of the inverted residual block, there is **NO ReLU** activation (hence, "linear"). Applying ReLU to low-dimensional tensors destroys excessive information (setting all negative values to zero collapsing the manifold). Keeping it linear prevents information loss.
+
+### 2. ARCHITECTURE: U-Net Style Semantic Segmentation
+**Q: How does the Segmentation Decoder work theoretically?**
+**A:** It maps high-level, low-resolution features back to the original image resolution to classify every pixel.
+- **UpSampling2D (Bilinear):** Mathematically interpolates new pixel values based on the distance to the 4 nearest neighbors. No learned parameters, keeping the model light.
+- **Skip Connections:** The encoder creates deep spatial hierarchies but loses exact position/localization data due to striding. Skip connections concatenate early, high-resolution feature maps from the MobileNetV2 backbone (like `block_1_expand_relu` at 80x80) directly to the decoder. This provides the decoder with local gradient/edge information to draw pixel-perfect masks around complex shapes like alligator cracks.
+
+### 3. LOSS FUNCTIONS: Math & Intuition
+**Q: Explain Categorical Crossentropy conceptually and mathematically.**
+**A:** $L = -\sum_{i=1}^{C} y_i \log(\hat{y}_i)$
+Where $y_i$ is the true label (1 for correct class, 0 otherwise), and $\hat{y}_i$ is the predicted probability from the softmax layer. The logarithmic penalty means the model is penalized exponentially more if it predicts the *wrong* class with *high* confidence.
+
+**Q: You used Label Smoothing (0.1). How does it work and why?**
+**A:** In standard one-hot encoding, targets are $[1, 0, 0]$. This forces the model's weights to grow infinitely large to push softmax probabilities towards 1.0, leading to severe overfitting. 
+Label smoothing changes targets to soft probabilities, e.g., $[0.95, 0.025, 0.025]$ (for 3 classes, $\alpha = 0.1$).
+$y_{smooth} = y_{true} \times (1 - \alpha) + \frac{\alpha}{K}$
+This forces the network to maintain a margin of uncertainty, acting as a powerful regularizer that improves generalization to unseen roads.
+
+**Q: Explain the BCE-Dice Loss used for segmentation.**
+**A:** It combines two complementary loss landscapes:
+1. **Binary Crossentropy (BCE):** Evaluates every pixel independently. Good for smooth gradients but fails entirely on heavily imbalanced data.
+2. **Dice Loss:** Evaluates the intersection globally. 
+   $Dice = \frac{2 \times |Y_{true} \cap Y_{pred}|}{|Y_{true}| + |Y_{pred}|}$
+   Our segmentation task is highly imbalanced (~90% of image pixels are background). BCE alone would achieve a deceptively low loss by just predicting "all background". Dice loss ignores true negatives (background correctly predicted as background) and focuses solely on maximizing the overlap of the actual damage classes. $BCE + Dice$ gives both pixel-level gradient stability and structure-level overlap maximization.
+
+### 4. OPTIMIZATION: Advanced Training Mechanics
+**Q: How does the Adam Optimizer work?**
+**A:** Adam (Adaptive Moment Estimation) tracks both the first moment (momentum) and second moment (uncentered variance) of the gradients.
+- $m_t = \beta_1 m_{t-1} + (1-\beta_1) g_t$ (momentum, helps push past saddle points)
+- $v_t = \beta_2 v_{t-1} + (1-\beta_2) g_t^2$ (RMSprop-like variance tracking)
+- Update step: Weight -= $\frac{LR \times \hat{m}_t}{\sqrt{\hat{v}_t} + \epsilon}$
+It effectively assigns an individual, dynamic learning rate to every single weight in the network, adapting based on the geometry of the loss surface.
+
+**Q: Explain Gradient Accumulation under the hood.**
+**A:** The RTX 2050 has 4GB VRAM. A standard batch size of 16 caused Out-Of-Memory (OOM) errors. We reduced batch size to 8, but extremely small batches produce noisy, erratic gradients which hurt convergence.
+Gradient accumulation runs the forward and backward pass for Batch 1 and *saves* the gradients locally in variables. It runs Batch 2, and *adds* the new gradients to the saved ones. Then it executes `optimizer.apply_gradients()` once. It mathematically simulates the exact gradient update of `batch_size=16` using the absolute memory footprint of `batch_size=8`, trading slight compute time for memory efficiency.
+
+**Q: What is Mixed Precision Training (`mixed_float16`)?**
+**A:** Deep learning traditionally uses 32-bit floats (FP32). Mixed precision uses 16-bit floats (FP16) for activations and gradients, but conservatively keeps master weights in FP32. 
+- **DL Math:** Multiplying two FP16 numbers is fast, but adding them produces round-off error. Modern NVIDIA GPUs with Tensor Cores (Ampere arch) perform FP16 multiplication and accumulate the sum directly in FP32 in a single hardware clock cycle. 
+- **Result:** Halves VRAM usage from 4GB to ~2GB, enabling larger batch sizes, and speeds up computation by ~2x without sacrificing numerical stability or accuracy.
+
+### 5. REGULARIZATION & NORMALIZATION
+**Q: How does Batch Normalization work and why did you freeze it during Stage 2?**
+**A:** During training, active weights in early layers continuously update, causing the distribution of inputs to later layers to shift wildly (known as "internal covariate shift"). BN neutralizes this by normalizing layer outputs to mean=0, variance=1 across the mini-batch, then applies its own learned scale ($\gamma$) and shift ($\beta$) parameters.
+It tracks moving averages of population mean/variance during training to use during inference. 
+**Why freeze:** When fine-tuning on our smaller dataset (Stage 2), updating these moving averages overrides and destroys the robust statistics learned from the massive ImageNet dataset. Freezing `layers.BatchNormalization` completely locking moving averages maintains the baseline stability of the backbone.
+
+**Q: Explain the Mathematics of Dropout (0.3 and 0.4).**
+**A:** During training, every node has a probability $p$ (e.g., 0.4) of being completely zerod out for that forward pass. This prevents nodes from co-adapting (relying on a specific preceding node). During inference, all nodes are heavily active. To correct the mathematical scale variance, node outputs are scaled by $(1 - p)$ during inference (or inverse-scaled by $1/(1-p)$ during training) to match the expected magnitude natively.
+
+### 6. EVALUATION METRICS
+**Q: Explain Precision vs Recall and F1-Score in the context of Pothole Detection.**
+**A:** 
+- **Precision:** $TP / (TP + FP)$. Out of all areas the model *claimed* were potholes, how many actually were? (Our Pothole Precision is 54.75%).
+- **Recall:** $TP / (TP + FN)$. Out of all *actual* potholes present on the road, how many did the model correctly flag? (Our Pothole Recall is 100%).
+- **F1-Score:** The harmonic mean: $2 \times \frac{Precision \times Recall}{Precision + Recall}$. 
+**Real-World Implication:** A harmonic mean heavily penalizes extreme values, which is why our F1 is 70% despite perfect recall. However, in life-critical road safety systems, False Negatives (missing a real pothole, causing a severe accident) are catastrophically worse than False Positives (slowing down for a shadow or patch). Therefore, optimizing the model topology and classification weights to forcibly bias toward high recall over precision is an intentionally correct engineering decision.
