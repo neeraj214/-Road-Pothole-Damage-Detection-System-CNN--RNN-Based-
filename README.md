@@ -119,23 +119,34 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🤖 Model Weights
 
-Trained model weights (`models/*.keras`) are **excluded from this repository** (too large for GitHub). They are local-only files.
+All trained model weights are backed up on **HuggingFace Spaces** via git-lfs:
+🔗 **[https://huggingface.co/spaces/Neeraj214/road-pothole-api/tree/main/models](https://huggingface.co/spaces/Neeraj214/road-pothole-api/tree/main/models)**
 
-| Model File | Size | Notes |
-|---|---|---|
-| `models/best_model_dual_stable.keras` | ~35MB | Stable dual-head checkpoint |
-| `models/best_model_dual_improved.keras` | ~42MB | Improved checkpoint |
-| `models/best_model_dual_v3/v4.keras` | ~41MB each | Version checkpoints |
-| `models/stage1_v3/v4/v5/v6.keras` | 12–85MB | Stage 1 training checkpoints |
+| Model File | Size | HuggingFace Path | Notes |
+|---|---|---|---|
+| `best_model_dual_stable.keras` | ~35MB | [download](https://huggingface.co/spaces/Neeraj214/road-pothole-api/resolve/main/models/best_model_dual_stable.keras) | Stable dual-head checkpoint |
+| `best_model_dual_improved.keras` | ~42MB | [download](https://huggingface.co/spaces/Neeraj214/road-pothole-api/resolve/main/models/best_model_dual_improved.keras) | Improved checkpoint |
+| `best_model_dual_v3.keras` | ~41MB | [download](https://huggingface.co/spaces/Neeraj214/road-pothole-api/resolve/main/models/best_model_dual_v3.keras) | Version 3 checkpoint |
+| `best_model_dual_v4.keras` | ~41MB | [download](https://huggingface.co/spaces/Neeraj214/road-pothole-api/resolve/main/models/best_model_dual_v4.keras) | Version 4 checkpoint |
+| `best_model_dual_v6_deeper_tf/` | ~65MB | [download](https://huggingface.co/spaces/Neeraj214/road-pothole-api/tree/main/models/best_model_dual_v6_deeper_tf) | TF SavedModel format (v6 deep) |
+| `stage1_v3.keras` | ~85MB | [download](https://huggingface.co/spaces/Neeraj214/road-pothole-api/resolve/main/models/stage1_v3.keras) | Stage 1 training checkpoint |
+| `stage1_v4.keras` | ~85MB | [download](https://huggingface.co/spaces/Neeraj214/road-pothole-api/resolve/main/models/stage1_v4.keras) | Stage 1 training checkpoint |
+| `stage1_v5.keras` | ~85MB | [download](https://huggingface.co/spaces/Neeraj214/road-pothole-api/resolve/main/models/stage1_v5.keras) | Stage 1 training checkpoint |
+| `stage1_v6.keras` | ~12MB | [download](https://huggingface.co/spaces/Neeraj214/road-pothole-api/resolve/main/models/stage1_v6.keras) | Stage 1 training checkpoint |
 
-To reproduce the trained weights: run the training scripts in `src/` with the RDD2022 / Pothole-600 dataset.
+To use locally:
+```bash
+# Download any checkpoint via git-lfs from the HF Space
+git clone https://huggingface.co/spaces/Neeraj214/road-pothole-api --include="models/*"
+# Or download individual files directly from the links above
+```
 
 ---
 
-## 🚫 Why This Project Is Not Deployed Online (Local-Only)
+## 🚫 Why This Project Is Not Publicly Deployed
 
-- **Model Size**: The dual-head MobileNetV2 model requires GPU acceleration; trained weights are stored locally.
+- **Model Size**: The dual-head MobileNetV2 requires GPU acceleration. Trained weights are now fully backed up on HuggingFace Spaces via git-lfs.
 - **Dataset Size**: The Pothole-600 dataset (~213MB zip) and RDD2022 data are excluded via `.gitignore`.
-- **HuggingFace Spaces**: The API endpoint is hosted at [Neeraj214/road-pothole-api](https://huggingface.co/spaces/Neeraj214/road-pothole-api) but requires model weights to be re-uploaded to run.
+- **HuggingFace Spaces**: The API is hosted at [Neeraj214/road-pothole-api](https://huggingface.co/spaces/Neeraj214/road-pothole-api).
 
 *Developed with ❤️ for smarter infrastructure.*
