@@ -115,4 +115,27 @@ npm install && npm run dev
 ## 📄 License
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
+---
+
+## 🤖 Model Weights
+
+Trained model weights (`models/*.keras`) are **excluded from this repository** (too large for GitHub). They are local-only files.
+
+| Model File | Size | Notes |
+|---|---|---|
+| `models/best_model_dual_stable.keras` | ~35MB | Stable dual-head checkpoint |
+| `models/best_model_dual_improved.keras` | ~42MB | Improved checkpoint |
+| `models/best_model_dual_v3/v4.keras` | ~41MB each | Version checkpoints |
+| `models/stage1_v3/v4/v5/v6.keras` | 12–85MB | Stage 1 training checkpoints |
+
+To reproduce the trained weights: run the training scripts in `src/` with the RDD2022 / Pothole-600 dataset.
+
+---
+
+## 🚫 Why This Project Is Not Deployed Online (Local-Only)
+
+- **Model Size**: The dual-head MobileNetV2 model requires GPU acceleration; trained weights are stored locally.
+- **Dataset Size**: The Pothole-600 dataset (~213MB zip) and RDD2022 data are excluded via `.gitignore`.
+- **HuggingFace Spaces**: The API endpoint is hosted at [Neeraj214/road-pothole-api](https://huggingface.co/spaces/Neeraj214/road-pothole-api) but requires model weights to be re-uploaded to run.
+
 *Developed with ❤️ for smarter infrastructure.*
